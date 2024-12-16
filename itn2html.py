@@ -48,10 +48,9 @@ def insert_time_to_schedule(schedule, time):
     if not time or not schedule:
         return schedule
     
-    # 시간 배열 생성
+    # 시간 배열 
     times = [t.strip() for t in time.split('<br>') if t.strip()]
-    if not times:
-        return schedule
+
     
     # 키워드와 매칭할 시간 인덱스
     time_index = 0
@@ -77,6 +76,8 @@ def insert_time_to_schedule(schedule, time):
     return modified_schedule
 
 
+
+
 def create_html(df: pd.DataFrame) -> str:
     # HTML 템플릿 시작 부분
     html_template_start = '''
@@ -89,11 +90,12 @@ def create_html(df: pd.DataFrame) -> str:
         </table>
     </div>
 '''
-
-
+    places = []
+    locations = []
     html_rows = []
     current_date = ''
     current_meals = []
+    sub_itns = []
     is_first_meal_overall = True  # 전체 일정의 첫 번째 식사 정보 체크용 플래그
         # 테이블 헤더 행 추가
 
@@ -148,6 +150,12 @@ def create_html(df: pd.DataFrame) -> str:
                     </tr>'''
                     
             html_rows.append(html_row)
+            place = schedule.replace('\xa0', '').replace('<br>', ',')
+            if place and place not in places : places.append(place)
+            location = location.replace('\xa0', '').replace('<br>', ',').replace(' ', '')
+            if location and location not in locations : locations.append(location)
+            
+
     # 가로 병합된 cell이면 td에 colspan을 적용
     # 마지막 날짜의 식사 정보 처리
     if current_meals:
@@ -156,64 +164,11 @@ def create_html(df: pd.DataFrame) -> str:
                     <td colspan="6" class="daily-meals">{meals_text}</td>
                 </tr>''')
     
-    # CSS 스타일 추가
-    # html_template_start = html_template_start.replace('</style>',
-    # '''
-    #     /* 데스크톱에서 식사 요약 숨기기 */
-    #     .meals-summary  {
-    #         height: 20px;
-    #     }
-
-    #     .meals-summary  td {
-    #         display: none;
-    #     }
-
-    #     @media screen and (max-width: 768px) {
-    #         /* 모바일에서 원래 식사 정보 숨기기 */
-    #         .mobile-hidden {
-    #             display: none !important;
-    #         }
-            
-    #         /* 모바일에서 식사 요약 표시 (첫 번째 제외) */
-    #         .meals-summary:not(:first-of-type) {
-    #             display: block;
-    #             background: #f5f6f7;
-
-    #         }
-            
-    #         .meals-summary:not(:first-of-type) .daily-meals {
-    #             /* padding: 16px 20px !important; */
-    #             padding: 10px;
-    #             background: #ffffff;
-    #             margin-top: 0px;
-    #             font-size: 13px !important;
-    #             color: #919191;  /* 푸른색 */
-    #             /* line-height: 1.6; */
-    #             /* white-space: pre-line; */
-    #         }
-            
-    #         /* 첫 번째 meals-summary 숨기기 */
-    #         .meals-summary:first-of-type {
-    #             display: none !important;
-    #         }
-            
-    #         /* 마지막 식사 요약의 마진 제거 */
-    #         .meals-summary:last-child {
-    #             margin-bottom: 0;
-    #         }
-    #         .meals-summary  {
-    #             height: auto;
-    #         }
-
-    #         .meals-summary  td {
-    #             display: block;
-    #         }
-    #     }
-    #     </style>''')
+    
     
     # 최종 HTML 생성
     final_html = html_template_start + '\n'.join(html_rows) + html_template_end
-    return final_html  
+    return final_html  , locations , places
     # # HTML 파일 저장
     # with open('target.html', 'w', encoding='utf-8') as f:
     #     f.write(final_html)

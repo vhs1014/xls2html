@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>엑셀 파일 업로드</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 15px;
+        }
+
+        .container {
+            background: white;
+            width: 100%;
+            max-width: 800px;
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .tab-container {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            font-size: 1.2em;
+            cursor: pointer;
+            color: #64748b;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .tab.active {
+            color: #3b82f6;
+            border-bottom: 2px solid #3b82f6;
+        }
+
+        .upload-form {
+            background: #f8fafc;
+            border: 2px dashed #cbd5e1;
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+            margin-bottom: 15px;
+        }
+
+        .excel-icon {
+            width: 160px !important;
+            height: 80px !important;
+            margin-bottom: 15px;
+        }
+
+        .file-upload-btn {
+            background: white;
+            border: 2px solid #3b82f6;
+            color: #3b82f6;
+            padding: 12px 25px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.2em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: inline-block;
+            margin: 15px 0;
+        }
+
+        .url-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 1.1em;
+            margin: 10px 0;
+        }
+
+        .url-input:focus {
+            border-color: #3b82f6;
+            outline: none;
+        }
+
+        .drag-text {
+            color: #64748b;
+            font-size: 1.1em;
+            text-align: center;
+            margin: 15px 0;
+        }
+
+        #file-name, #url-status {
+            background: #f0f9ff;
+            color: #0369a1;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            display: none;
+            animation: slideDown 0.3s ease;
+            border: 1px solid #bae6fd;
+            word-break: break-all;
+            margin: 10px 0;
+        }
+
+        .submit-btn {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.2em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
+            margin: 15px auto;
+            display: none;
+        }
+
+        .form-container {
+            display: none;
+        }
+
+        .form-container.active {
+            display: block;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 15px;
+            }
+
+            h1 {
+                font-size: 1.5em;
+            }
+
+            .tab {
+                font-size: 1em;
+                padding: 8px 15px;
+            }
+
+            .file-upload-btn {
+                font-size: 1.1em;
+                padding: 10px 20px;
+            }
+
+            .drag-text {
+                font-size: 1em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>엑셀 파일 변환</h1>
+        
+        <div class="tab-container">
+            <div class="tab active" onclick="switchTab('file')">파일 업로드</div>
+            <div class="tab" onclick="switchTab('url')">URL 입력</div>
+        </div>
+
+        <!-- 파일 업로드 폼 -->
+        <div class="form-container active" id="file-form">
+            <div class="upload-form" id="drop-zone">
+                <form action="/convert/excel-to-json/" method="post" enctype="multipart/form-data" id="upload-form">
+                    <div class="icon">
+                        <img src="/itinerary/static/images/excel.png" alt="Excel Icon" class="excel-icon">
+                    </div>
+                    
+                    <label for="file-input" class="file-upload-btn">
+                        파일 선택하기
+                    </label>
+                    <input type="file" name="file" id="file-input" accept=".xlsx,.xls" style="display: none;">
+                    
+                    <div class="drag-text">
+                        또는 이곳에 파일을 끌어다 놓으세요
+                        <br>
+                        <span>(.xlsx, .xls 파일만 가능)</span>
+                    </div>
+
+                    <div id="file-name"></div>
+                    <button type="submit" class="submit-btn" id="file-submit-btn">변환하기</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- URL 입력 폼 -->
+        <div class="form-container" id="url-form">
+            <div class="upload-form">
+                <form action="/itinerary/url/" method="get" id="url-upload-form">
+                    <div class="icon">
+                        <img src="/itinerary/static/images/excel.png" alt="Excel Icon" class="excel-icon">
+                    </div>
+                    
+                    <input type="url" name="excel_url" class="url-input" id="url-input" 
+                           placeholder="엑셀 파일 URL을 입력하세요" required>
+                    <div id="url-status"></div>
+                    <button type="submit" class="submit-btn" id="url-submit-btn">변환하기</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 기존 파일 업로드 관련 변수들
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileNameDiv = document.getElementById('file-name');
+        const fileSubmitBtn = document.getElementById('file-submit-btn');
+
+        // URL 입력 관련 변수들
+        const urlInput = document.getElementById('url-input');
+        const urlStatus = document.getElementById('url-status');
+        const urlSubmitBtn = document.getElementById('url-submit-btn');
+
+        // 탭 전환 함수
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.form-container').forEach(f => f.classList.remove('active'));
+            
+            if (tab === 'file') {
+                document.querySelector('.tab:first-child').classList.add('active');
+                document.getElementById('file-form').classList.add('active');
+            } else {
+                document.querySelector('.tab:last-child').classList.add('active');
+                document.getElementById('url-form').classList.add('active');
+            }
+        }
+
+        // 페이지 로드 시 초기화 함수
+        window.onload = function() {
+            // 파일 입력 초기화
+            fileInput.value = '';
+            fileNameDiv.style.display = 'none';
+            fileSubmitBtn.style.display = 'none';
+
+            // URL 입력 초기화
+            urlInput.value = '';
+            urlStatus.style.display = 'none';
+            urlSubmitBtn.style.display = 'none';
+
+            // 페이지 진입 시 파일이 이미 선택되어 있는지 확인
+            if (fileInput.files.length > 0) {
+                updateFileName(fileInput.files[0]);
+            }
+        };
+
+        // 페이지 표시 시 항상 실행 (뒤로가기 포함)
+        window.addEventListener('pageshow', function(event) {
+            // bfcache에서 복원된 경우에도 실행
+            if (event.persisted) {
+                // 파일 입력 초기화
+                fileInput.value = '';
+                fileNameDiv.style.display = 'none';
+                fileSubmitBtn.style.display = 'none';
+
+                // URL 입력 초기화
+                urlInput.value = '';
+                urlStatus.style.display = 'none';
+                urlSubmitBtn.style.display = 'none';
+            }
+        });
+
+        // 파일 업로드 관련 함수들
+        function updateFileName(file) {
+            if (file) {
+                fileNameDiv.textContent = `선택된 파일: ${file.name}`;
+                fileNameDiv.style.display = 'block';
+                fileSubmitBtn.style.display = 'block';
+            } else {
+                fileNameDiv.textContent = '';
+                fileNameDiv.style.display = 'none';
+                fileSubmitBtn.style.display = 'none';
+            }
+        }
+
+        // URL 입력 관련 이벤트
+        urlInput.addEventListener('input', function() {
+            if (this.value.trim()) {
+                urlSubmitBtn.style.display = 'block';
+                urlStatus.textContent = 'URL이 입력되었습니다.';
+                urlStatus.style.display = 'block';
+            } else {
+                urlSubmitBtn.style.display = 'none';
+                urlStatus.style.display = 'none';
+            }
+        });
+
+        // 드래그 앤 드롭 이벤트들
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        dropZone.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            fileInput.files = files;
+            updateFileName(files[0]);
+        }
+
+        fileInput.addEventListener('change', function(e) {
+            if (this.files.length > 0) {
+                updateFileName(this.files[0]);
+            } else {
+                updateFileName(null);
+            }
+        });
+    </script>
+</body>
+</html> 

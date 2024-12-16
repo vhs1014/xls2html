@@ -13,20 +13,22 @@ def format_cell(x):
             return str(x)
     return ''
 
-def get_night_days(title):
-    night = int(re.findall(r'(\d+)박', title)[0]) if '박' in title else None
-    days = int(re.findall(r'(\d+)일', title)[0]) if '일' in title else None
+# def get_night_days(title):
+#     night = int(re.findall(r'(\d+)박', title)[0]) if '박' in title else None
+#     days = int(re.findall(r'(\d+)일', title)[0]) if '일' in title else None
     
-    if night and days:
-        return night, days
-    elif night:
-        return night, night + 1
-    elif days:
-        return days - 1, days
-    return None, None
-
-def create_html(df: pd.DataFrame) -> Tuple[str, Dict]:
-    subData = {}
+#     if night and days:
+#         return night, days
+#     elif night:
+#         return night, night + 1
+#     elif days:
+#         return days - 1, days
+#     return None, None
+def create_html(df: pd.DataFrame) -> Tuple[str, Dict[str, str]]:
+    # 초기화
+    subData = dict()
+    subData['title'] = ''
+    
     # HTML 시작 부분
     html_content = """
         <div class="container">
@@ -39,54 +41,48 @@ def create_html(df: pd.DataFrame) -> Tuple[str, Dict]:
     # 데이터 처리 및 HTML 컨텐츠 생성
     for i in range(df.shape[0]):
         row = df.iloc[i]
-        row_data = [format_cell(x) for x in row if str(x).strip() != '']
+        # 빈 셀 제거하고 데이터 포맷팅
+        # row_data = [format_cell(x) for x in row if pd.notna(x) and str(x).strip()]
+        row_data = [format_cell(x) for x in row if str(x).strip() != ''] 
         
-        if row_data:
-            title = row_data[0].strip()
-            content = ' | '.join(x for x in row_data[1:] if x.strip()).strip() if len(row_data) > 1 else ''.strip()
+        if not row_data:
+            continue
             
-            if content.replace(' ', '').replace('|', '') != '':
-                if title:
-                    html_content += f"""
-                    <div class="content-card">
-                        <div class="content-title">{title}</div>
-                        <div class="content-body">{content}</div>
-                    </div>
-                    """
+        # 첫 번째 열은 제목으로, 나머지는 내용으로 처리
+        title = row_data[0].strip()
+        content = ' | '.join(x.strip() for x in row_data[1:] if x.strip()) if len(row_data) > 1 else ''
+        
+        # 내용이 있는 경우
+        if content.replace(' ', '').replace('|', ''):
+            if title:
+                # 제목이 일정 타이틀인 경우
+                if not subData['title'] and ('일' in title or '박' in title):
+                    subData['title'] = title
+                elif title.replace(' ', '') == '상품명':
+                    subData['title'] = content
+                else:
                     short_title = title.replace(' ', '').replace('\xa0', '')
-                    if title in ["상품가격", "상품가", "가격"]:
+                    # 가격 정보인 경우 특별 처리
+                    if any(price_title in title for price_title in ["상품가격", "상품가", "가격"]):
                         subData['price'] = content
                     else:
                         subData[short_title] = content
                     title_chk = True
                     before_content = content
                     before_title = short_title
-                else:
-                    html_content = html_content.replace(before_content, before_content + '<br>' + content)
-                    subData[before_title] = subData[before_title] + '\r\n' + content
-                    before_content = content
-            else:          # content가 없는 경우
-                if i == 0:
-                    subData['title'] = title
-                    subData['nights'], subData['days'] = get_night_days(title)
-                    
-                    html_content += f"""
-                    <div class="container">
-                        <div class="header">{title}</div>
-                    </div>
-                    """
-                else:  # 첫번째 상품명이 아닌경우 
-                    if title_chk:
-                        html_content = html_content.replace(before_content, before_content + '<br>' + title)
+            else:
+                # 제목 없이 내용만 있는 경우 이전 내용에 추가
+                if before_content and before_title:
+                    if subData.get(before_title):
+                        subData[before_title] = subData.get(before_title) + '\r\n' + content
                     else:
-                        html_content += f"""
-                        <div style="background-color: #248fd63d; padding: 10px 0 10px 20px; margin-bottom: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08)">{title}</div>
-                        """
+                        subData[before_title] = content                        
+                    # subData[before_title] = subData[before_title] + '\r\n' + content
+                    before_content = content
+        # 내용이 없는 경우
+        else:
+            # 첫 번째 일정 타이틀인 경우
+            if not subData['title'] and ('일' in title or '박' in title):
+                subData['title'] = title
     
-    html_content += """
-        </div>
-    </body>
-    </html>
-    """
-    
-    return html_content, subData
+    return  subData
