@@ -294,7 +294,82 @@
                 icon.classList.toggle('collapsed');
             });
         });
+    
+        function () {
+            
+            document.body.style.maxWidth = '716px'
+            // const rootmain = document.getElementsByClassName('MuiBox-root css-0')[0]
+            const rootmain = document.querySelector('.day-section').parentElement
+            
+            if (rootmain) {
+                rootmain.style.display = 'flex'
+                rootmain.style.flexWrap = 'wrap'
+                rootmain.style.gap = '12px'
+                
+            } else {
+                document.body.style.display = 'flex'
+                document.body.style.flexWrap = 'wrap'
+                document.body.style.gap = '12px'
+            }
 
+            document.querySelectorAll('.info-section').forEach(element => {
+                element.style.display = 'flex'
+                element.style.flexWrap = 'wrap'
+
+            });
+
+            document.querySelectorAll('.detail').forEach(element => {
+                element.style.fontSize = '12.5px';
+            });
+            document.querySelectorAll('.schedule-item').forEach(element => {
+                element.style.width = '298px'
+            });
+            document.querySelectorAll('.day-section').forEach(element => {
+                element.style.width = '332px'
+                element.style.marginBottom = '0px'
+            });
+
+            document.querySelectorAll('.meal-item').forEach(element => {
+                element.style.padding = '15px 6px'
+            });
+
+            document.querySelectorAll('.meals').forEach(element => {
+                element.style.marginTop = '5px'
+                element.style.padding = '5px 5px'
+            });
+
+            document.querySelectorAll('.product-info').forEach(element => {
+                element.style.marginBottom = '0px'
+            });
+
+            document.querySelectorAll('.schedule-item').forEach(element => {
+                element.style.margin = '0px'
+            });
+
+            document.querySelectorAll('.download-button').forEach(element => {
+                element.style.padding = '5px 10px'
+            });
+
+
+            document.querySelectorAll('.day-section').forEach(element => {
+                element.style.boxShadow = 'none'
+                element.style.border = '1px solid #ccc'
+            });
+
+            document.querySelectorAll('.info-section').forEach(element => {
+                element.style.boxShadow = 'none'
+                element.style.border = '1px solid #ccc'
+            });
+
+
+
+
+            window.addEventListener('afterprint', function() {
+                console.log('프린터 대화상자가 닫혔습니다.');
+                location.reload();
+            });
+            window.print()
+        }
     </script>
 </body>
 

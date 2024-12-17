@@ -51,17 +51,8 @@ def generate_itinerary_html(json_data):
             
             # 제외할 필드 제거
             fields = [k for k in original_order if k not in self.exclude_fields]
-            
-            # # 최우선 표시할 필드들
-            # top_priority = ['3월', '4월', '출발일', 'price', '항공']
-            
-            # 최우선 필드들을 원래 순서대로 정렬
+
             result = []
-            # for field in top_priority:
-            #     if field in fields:
-            #         result.append(field)
-            #         fields.remove(field)
-            
             # 나머지 필드들은 JSON의 원래 순서 그대로 추가
             result.extend(fields)
             
@@ -157,7 +148,11 @@ def generate_itinerary_html(json_data):
 
         def generate_html(self):
             sections = ['<div class="product-info">']
-            sections.append(f'<div class="title-section"><h1>{self.data["title"]}</h1></div>')
+            sections.append(f'''
+            <div class="title-section">
+                <h1>{self.data["title"]}</h1>
+            </div>
+            ''')
             sections.append('<div class="info-section">')
             
             # JSON의 원래 순서대로 필드 처리
@@ -243,17 +238,6 @@ def generate_itinerary_html(json_data):
             '''
 
         def _generate_day_section(self, day_data, day_num):
-            start_date = datetime(2024, 1, 8)  # 시작일은 설정 가능하도록 수정 가능
-            current_date = start_date + timedelta(days=day_num-1)
-            
-            weekdays = {
-                'Monday': '월요일', 'Tuesday': '화요일', 'Wednesday': '수요일',
-                'Thursday': '목요일', 'Friday': '금요일', 'Saturday': '토요일', 'Sunday': '일요일'
-            }
-            
-            date_str = current_date.strftime("%m월 %d일 %A")
-            for eng, kor in weekdays.items():
-                date_str = date_str.replace(eng, kor)
 
             locations_html = '\n'.join(self._generate_schedule_items(location) 
                                      for location in day_data['locations'])
@@ -262,7 +246,7 @@ def generate_itinerary_html(json_data):
             return f'''
             <div id="day{day_num}" class="day-section">
                 <div class="day-title">
-                    <span>{day_num}일차 <span class="date">{date_str}</span></span>
+                    <span>{day_num}일차 </span>
                     <span class="material-icons-round toggle-icon">expand_more</span>
                 </div>
                 <div class="day-content">
