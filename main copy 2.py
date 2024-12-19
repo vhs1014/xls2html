@@ -16,6 +16,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pydantic import BaseModel, EmailStr
+import re
 
 from s3_uploader import S3FileUploader
 
@@ -57,38 +58,88 @@ class EmailRequest(BaseModel):
     subject: str
     body: str
 
+# 멀티라인 줄 분리
+async def  split_multiline_rows(df: pd.DataFrame) -> pd.DataFrame:
+    new_rows = []
+    # 각 행을 순회하면서 처리
+    for idx, row in df.iterrows():
+        # 각 컬럼의 값을 확인
+        has_multiline = False
+        split_contents = {}
+        max_lines = 1
+        
+        # 각 컬럼의 내용을 확인하고 줄바꿈이 있는지 체크
+        for col in df.columns:
+            if isinstance(row[col], str):
+                lines = row[col].split('\n')
+                if len(lines) > 1:
+                    has_multiline = True
+                    split_contents[col] = lines
+                    max_lines = max(max_lines, len(lines))
+                else:
+                    split_contents[col] = [row[col]] * max_lines
+            else:
+                split_contents[col] = [row[col]] * max_lines
+        
+        # 멀티라인이 없는 경우 원래 행을 그대로 추가
+        if not has_multiline:
+            new_rows.append(row.to_dict())
+        else:
+            # 멀티라인이 있��� 경우 분리하여 새로운 행 생성
+            for line_idx in range(max_lines):
+                new_row = {}
+                for col in df.columns:
+                    try:
+                        new_row[col] = split_contents[col][line_idx]
+                    except IndexError:
+                        new_row[col] = split_contents[col][-1]  # 라인이 부족한 경우 마지막 값 사용
+                new_rows.append(new_row)
 
+    # 새로운 데이터프레임 생성
+    result_df = pd.DataFrame(new_rows)
+    return result_df
 
 async def itn_search(df: pd.DataFrame) -> pd.DataFrame:
-        keyword_count = 0
-        # 특정 단어가 한 줄에 2개 이상 나오는 줄을 찾고, 해당 줄 위에 모든 데이터를 삭제
-        keywords = ['일자', '교통편', '시간', '일정', '식사', '장소', '날짜', 'DATE', 'CITY', 'TRANS', 'TIME', 'ITINERARY', 'MEAL']
-
-        # 해당 줄 위에 모든 데이터를 삭제합니다.
-        idy  = -1
-        for idx, row in df.iterrows():
-            # 각 셀의 값에서 모든 빈칸을 지워줍니다.
-            cleaned_row = [str(cell).replace(' ', '') for cell in row]
-            # keywords와 비교하여 한 줄에 3개 이상 일치하는지 확인합니다.
-            for keyword in keywords:
-                if keyword in cleaned_row:
-                    keyword_count += 1
-
-            if keyword_count >= 3:
-                idy = idx    
-                break
-        head_df = df.iloc[:idy]  # 헤더 부분
-        itn_df = df.iloc[idy:]   # 일정 부분
+    # 컬럼 매핑 정의
+    column_aliases = {
+        'date': ['일자', '날짜', '순번', '일시', 'Date', 'Day', 'No'],
+        'place': ['지역', '장소', 'place', 'city', '도시', '여행지'],
+        'transport': ['교통편', '이동수단', '교통', 'Trans', 'Transport'],
+        'time': ['시간', 'time'],
+        'itinerary': ['주요일정', '일정', '관광지', 'itinerary'],
+        'meal': ['식사', 'meal', 'meals']
+    }
+    
+    # 특정 단어가 한 줄에 3개 이상 나오는 줄을 찾고, 해당 줄 위에 모든 데이터를 삭제
+    idy = -1
+    for idx, row in df.iterrows():
+        # 각 셀의 값에서 모든 빈칸을 지워줍니다.
+        cleaned_row = [str(cell).replace(' ', '').lower() for cell in row]
+        # 각 셀이 어떤 카테고리에 속하는지 확인
+        matched_categories = set()
         
-        # head , itn 가각 빈줄, 빈칸 제거
-        head_df = head_df.dropna(axis=1, how='all')   
-        head_df.columns = range(len(head_df.columns))  
-        head_df = head_df.dropna(axis=0, how='all') 
-        
-        itn_df = itn_df.dropna(axis=1, how='all')   
-        itn_df.columns = range(len(itn_df.columns))  
-        itn_df = itn_df.dropna(axis=0, how='all') 
-        return head_df, itn_df
+        for cell in cleaned_row:
+            for category, aliases in column_aliases.items():
+                if any(alias.lower() in cell for alias in aliases):
+                    matched_categories.add(category)
+                    
+        if len(matched_categories) >= 3:
+            idy = idx
+            break
+            
+    head_df = df.iloc[:idy]  # 헤더 부분
+    itn_df = df.iloc[idy:]   # 일정 부분
+    
+    # head, itn 각각 빈줄, 빈칸 제거
+    head_df = head_df.dropna(axis=1, how='all')   
+    head_df.columns = range(len(head_df.columns))  
+    head_df = head_df.dropna(axis=0, how='all') 
+    
+    itn_df = itn_df.dropna(axis=1, how='all')   
+    itn_df.columns = range(len(itn_df.columns))  
+    itn_df = itn_df.dropna(axis=0, how='all')
+    
+    return head_df, itn_df, column_aliases
     
 async def read_excel_from_upload(file: UploadFile) -> pd.DataFrame:
     """업로드된 엑셀 파일을 DataFrame으로 읽기"""
@@ -99,8 +150,8 @@ async def read_excel_from_upload(file: UploadFile) -> pd.DataFrame:
         # BytesIO에서 직접 DataFrame으로 읽기
         df = pd.read_excel(excel_data, header=None)
         # unique_words = extract_sorted_unique_words(df)
-        head_df, itn_df = await itn_search(df)
-        return head_df, itn_df
+        head_df, itn_df, column_aliases = await itn_search(df)
+        return head_df, itn_df, column_aliases
     except Exception as e:
             raise HTTPException(status_code=400, detail=f"엑셀 파일 읽기 실패: {str(e)}")
 
@@ -116,15 +167,15 @@ async def read_excel_from_url(url: str) -> pd.DataFrame:
             
             # BytesIO에서 직접 DataFrame으로 읽기
             df = pd.read_excel(excel_data, header=None)
-            head_df, itn_df = await itn_search(df)
-            return head_df, itn_df
+            head_df, itn_df, column_aliases = await itn_search(df)
+            return head_df, itn_df, column_aliases
             
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"엑셀 파일 읽기 실패: {str(e)}")
 
 
 
-async def convert_df_to_json(df: pd.DataFrame) -> str:
+async def convert_df_to_json(df: pd.DataFrame, column_aliases) -> str:
     """
     여행 일정이 담긴 DataFrame을 JSON 형식으로 변환하는 함수
     
@@ -139,112 +190,148 @@ async def convert_df_to_json(df: pd.DataFrame) -> str:
         """특수 문자와 공백을 정리하는 함수"""
         if pd.isna(text):
             return ""
-        # 문자열로 변환
         text = str(text)
-        # 유니코드 정규화 (NFKC)
         text = unicodedata.normalize('NFKC', text)
-        # \xa0를 일반 공백으로 변환
-        text = text.replace('\xa0', ' ')
-        # 연속된 공백을 하나로
+        text = str(text).replace('\xa0', ' ')
         text = ' '.join(text.split())
         return text
+    def identify_column_types(row):
+        """첫 번째 행을 기반으로 각 컬럼의 타입을 식별"""
+        column_types = {}
+        for col_idx, cell in enumerate(row):
+            cell_str = str(cell).lower().strip()
+            for col_type, aliases in column_aliases.items():
+                if any(alias.lower() in cell_str for alias in aliases):
+                    column_types[col_idx] = col_type
+                    break
+        return column_types
     
-    # 첫 번째 행의 컬럼명을 가져옴
-    columns = df.columns.tolist()
+    # 컬럼 타입 식별
+    first_row = df.iloc[0]
+    first_row = [clean_text(r).replace(' ', '').lower()  for r in first_row]
+    column_types = identify_column_types(first_row)
     
-    # 첫 번째 행은 제외하고 처리
-    df = df.iloc[1:]
+
+    # 데이터 처리를 위한 컬럼 인덱스 찾기
+    date_col = next((col for col, type_ in column_types.items() if type_ == 'date'), None)
+    place_col = next((col for col, type_ in column_types.items() if type_ == 'place'), None)
+    transport_col = next((col for col, type_ in column_types.items() if type_ == 'transport'), None)
+    time_col = next((col for col, type_ in column_types.items() if type_ == 'time'), None)
+    itinerary_col = next((col for col, type_ in column_types.items() if type_ == 'itinerary'), None)
+    meal_col = next((col for col, type_ in column_types.items() if type_ == 'meal'), None)
+    
+
+
+     # DataFrame 처리 시작
+    df = df.iloc[1:]  # 첫 번째 행(헤더) 제외
     locations = set()
     places = set()
     itinerary = []
+    location_name = ''
     current_day = None
     current_location = None
     day_data = None
 
-    # DataFrame의 각 행을 순회하며 처리
+    def is_day_header(text):
+        """날짜 헤더인지 확인하는 함수"""
+        text = clean_text(text).replace(' ', '')
+        # 날짜 패턴 정의
+        day_patterns = [
+            r'제?\d+일차?$',  # '제1일', '1일차', '제1일차'
+            r'\d+일$',        # '1일'
+        ]
+        return any(re.search(pattern, text) for pattern in day_patterns)
+
     for idx, row in df.iterrows():
-        
         # 일자 처리
-        if pd.notna(row[columns[0]]):
-            day_str = clean_text(row[columns[0]])
-            # 숫자만 추출
-            numbers = ''.join(filter(str.isdigit, day_str))
-            # 숫자가 있는 경우에만 처리
-            if numbers:
-                day_num = int(numbers)
+        if date_col is not None and pd.notna(row[date_col]) and is_day_header(str(row[date_col])):
+            # 이전 day_data가 있으면 현재 location을 추가하고 itinerary에 추가
+            if day_data is not None and current_location is not None:
+                if current_location["schedule"]:  # schedule이 있는 경우만 추가
+                    day_data['locations'].append(current_location)
+                itinerary.append(day_data)
                 
-                if day_num != current_day:
-                    if day_data is not None:
-                        itinerary.append(day_data)
-                    current_day = day_num
-                    day_data = {
-                        "day": day_num,
-                        "locations": [],
-                        "meals": {}
-                    }
-                    current_location = None
-        
-        if pd.isna(row[columns[0]]) and day_data is None:
+            day_str = clean_text(row[date_col])
+            
+            day_data = {
+                "day": day_str,
+                "locations": [],
+                "meals": []
+            }
+            
+            # 새로운 날짜에서 이전 location_name이 있으면 새로운 current_location 생성
+            if location_name:
+                current_location = {
+                    "place": location_name,
+                    "schedule": []
+                }
+            
+        if date_col is not None and pd.isna(row[date_col]) and day_data is None:
             continue
             
-        # 지역 처리
-        if pd.notna(row[columns[1]]):
-            location_name = clean_text(row[columns[1]])
-            if current_location is None or current_location['place'] != location_name:
+        # 장소 처리
+        if place_col is not None and pd.notna(row[place_col]):
+            new_location_name = clean_text(row[place_col])
+            if new_location_name:  # 새 장소가 빈 값이 아닌 경우
+                # 이전 location이 있고 schedule이 있으면 추가
+                if current_location is not None and current_location["schedule"]:
+                    day_data['locations'].append(current_location)
+                
+                location_name = new_location_name
                 current_location = {
                     "place": location_name,
                     "schedule": []
                 }
                 locations.add(location_name)
-                if pd.notna(row[columns[2]]):
-                    current_location['flight'] = clean_text(row[columns[2]])
-                day_data['locations'].append(current_location)
+                if transport_col is not None and pd.notna(row[transport_col]):
+                    current_location['flight'] = clean_text(row[transport_col])
         
         # 일정 처리
-        if current_location is not None and pd.notna(row[columns[4]]):
+        if current_location is not None and itinerary_col is not None and pd.notna(row[itinerary_col]):
             schedule_item = {}
-            if pd.notna(row[columns[3]]):
-                time_value = row[columns[3]]
-                # datetime.time 객체인 경우
+            if time_col is not None and pd.notna(row[time_col]):
+                time_value = row[time_col]
                 if isinstance(time_value, (datetime.time, datetime.datetime)):
                     time_value = time_value.strftime('%H:%M')
-                # 문자열인 경우 정제해서 사용
                 else:
                     time_value = clean_text(time_value)
                 schedule_item['time'] = time_value
             
-            # 주요일정을 details 배열로 처리
-            activity_text = clean_text(row[columns[4]])
-            details = []
-            
-            # 줄바꿈으로 분리하여 처리
-            activities = activity_text.split('\n')
-            for activity in activities:
-                activity = clean_text(activity)
-                details.append(activity)
-                places.add(activity)                    
-            
-            schedule_item['details'] = details
-            current_location['schedule'].append(schedule_item)
+            activity_text = clean_text(row[itinerary_col])
+            if activity_text:  # 빈 문자열이 아닌 경우에만 추가
+                # 새로운 schedule_item이면 details 배열 초기화
+                if 'details' not in schedule_item:
+                    schedule_item['details'] = []
+                schedule_item['details'].append(activity_text)
+                places.add(activity_text)
+                
+                # schedule_item에 내용이 있으면 추가
+                if len(schedule_item['details']) > 0:
+                    current_location['schedule'].append(schedule_item)
         
         # 식사 정보 처리
-        if pd.notna(row[columns[5]]):
-            meals = clean_text(row[columns[5]]).split('\n')
-            for meal in meals:
-                meal = clean_text(meal)
-                if meal.startswith('조:'):
-                    day_data['meals']['breakfast'] = meal.replace('조:', '')
-                elif meal.startswith('중:'):
-                    day_data['meals']['lunch'] = meal.replace('중:', '')
-                elif meal.startswith('석:'):
-                    day_data['meals']['dinner'] = meal.replace('석:', '')
-    
-    # 마지막 일정 추가
-    if day_data is not None:
+        if meal_col is not None and pd.notna(row[meal_col]) and day_data is not None:
+            meals = clean_text(row[meal_col]).split('\n')
+            day_data['meals'].extend(meals)
+            # meal_dict = {}
+            # for meal in meals:
+            #     meal = meal.strip()
+            #     if meal.startswith('조식'):
+            #         meal_dict['breakfast'] = meal.replace('조식', '').replace(':', '').strip()
+            #     elif meal.startswith('중식'):
+            #         meal_dict['lunch'] = meal.replace('중식', '').replace(':', '').strip()
+            #     elif meal.startswith('석식'):
+            #         meal_dict['dinner'] = meal.replace('석식', '').replace(':', '').strip()
+            # if meal_dict:
+            #     day_data['meals'].update(meal_dict)
+
+    # 마지막 day_data 처리
+    if day_data is not None and current_location is not None:
+        if current_location["schedule"]:  # schedule이 있는 경우만 추가
+            day_data['locations'].append(current_location)
         itinerary.append(day_data)
 
-    # return json.dumps(result, ensure_ascii=False)
-    return itinerary, locations , places 
+    return itinerary, locations, places
 
 
 
@@ -260,13 +347,20 @@ async def health():
 async def convert_excel_to_html(excel_url: str):
     try:
         # URL에서 직접 DataFrame으로 읽기
-        head_df, itn_df  = await read_excel_from_url(excel_url)
+        head_df, itn_df ,column_aliases = await read_excel_from_url(excel_url)
+
+        itn_df = await split_multiline_rows(itn_df)
         subData =  create_html(head_df)
-        subData['itinerary'], locations, places = await convert_df_to_json(itn_df)
+        subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
+        
         subData['file_url'] = excel_url
+        final_html = json2html.generate_itinerary_html(subData)
+        
+
+        # html 생성후 추가 정보 추가
         subData['locations'] = ','.join(locations)
         subData['places'] = extract_sorted_unique_words(','.join(places))
-        final_html = json2html.generate_itinerary_html(subData['itinerary'])
+
         result = {
             'html': final_html,
             'subData': subData,
@@ -304,7 +398,7 @@ async def convert_excel_to_html(
         
         if file.filename.endswith(('.xlsx', '.xls')):
             # 엑셀 파일 처리
-            head_df, itn_df = await read_excel_from_upload(file)
+            head_df, itn_df ,column_aliases= await read_excel_from_upload(file)
         try:
             if itn_id and file_url:
                 result = uploader.update_file(file.file, file.filename, file_url)
@@ -317,10 +411,9 @@ async def convert_excel_to_html(
         except Exception as e:
             raise Exception(f"파일 처리 실패: {str(e)}")
         
-        # final_html, subData = await sum_html(head_df, itn_df, result['file_url'], save_btn=True)
-        
+        itn_df = await split_multiline_rows(itn_df)
         subData =  create_html(head_df)
-        subData['itinerary'], locations, places = await convert_df_to_json(itn_df)
+        subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
         subData['file_url'] = result['file_url']
         final_html = json2html.generate_itinerary_html(subData)
         
@@ -329,8 +422,6 @@ async def convert_excel_to_html(
         subData['places'] = extract_sorted_unique_words(','.join(places))
         
         # JSON 2 html 
-        
-        
         return JSONResponse(content={
             'status': 'success',
             'html': final_html,

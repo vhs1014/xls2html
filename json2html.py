@@ -7,9 +7,9 @@ def generate_itinerary_html(json_data):
             self.data = data
             
             self.icon_rules = {
-                ('출발', '일정', '날짜'): 'calendar_month',
+                ('일정', '날짜'): 'calendar_month',
                 ('가격', 'price', '원'): 'payments',
-                ('항공', '비행'): 'flight',
+                ('항공', '비행', '출발', '도착', '수속', '탑승'): 'flight',
                 ('포함',): 'check_circle',
                 ('불포함',): 'remove_circle',
                 ('쇼핑', '상점', '센터'): 'shopping_bag',
@@ -34,7 +34,7 @@ def generate_itinerary_html(json_data):
                 '기본': 'label_important'
             }
             
-            self.exclude_fields = {'locations', 'places', 'itinerary', 'title'}
+            self.exclude_fields = {'locations', 'places', 'itinerary'}
             
             self.special_handler_rules = {
                 ('출발', '일정', '날짜'): self._process_multiline,
@@ -150,7 +150,7 @@ def generate_itinerary_html(json_data):
             sections = ['<div class="product-info">']
             sections.append(f'''
             <div class="title-section">
-                <h1>{self.data["title"]}</h1>
+                <h1>{self.data["상품명"]}</h1>
             </div>
             ''')
             sections.append('<div class="info-section">')
@@ -174,17 +174,16 @@ def generate_itinerary_html(json_data):
 
         def _format_price_with_html(self, price_str):
             if not isinstance(price_str, str):
-                return f'<div class="detail">{price_str}원</div>'
+                return f'<div class="detail">{price_str}</div>'
             prices = price_str.split('|')
-            return '\n'.join([f'<div class="detail">{price.strip()}원</div>' for price in prices])
+            return '\n'.join([f'<div class="detail">{price.strip()}</div>' for price in prices])
 
         def _process_multiline(self, text):
             return '\n'.join([f'<div class="detail">{line.strip()}</div>' 
                              for line in text.split('\r\n')])
 
         def _process_list(self, text, prefix=''):
-            items = text.replace('* ', '').split(', ')
-            return '\n'.join([f'<div class="detail">{prefix}{item}</div>' for item in items])
+            return text.replace('* ', '')
 
         def _process_remarks(self, text):
             items = text.replace('* ', '').split('\r\n')
@@ -219,24 +218,37 @@ def generate_itinerary_html(json_data):
             if not meals:
                 return ''
             
+            # meal_items = []
+            # meal_mapping = {'breakfast': '아침', 'lunch': '점심', 'dinner': '저녁'}
+            
+            # for key, display in meal_mapping.items():
+            #     if key in meals:
+            #         meal_items.append(f'<span class="meal-item">{display}:{meals[key]}</span>')
+            
+            # if not meal_items:
+            #     return ''
+            
+            # return f'''
+            # <div class="meals">
+            #     <div class="meal-info">
+            #         {' '.join(meal_items)}
+            #     </div>
+            # </div>
+            # '''
             meal_items = []
-            meal_mapping = {'breakfast': '아침', 'lunch': '점심', 'dinner': '저녁'}
-            
-            for key, display in meal_mapping.items():
-                if key in meals:
-                    meal_items.append(f'<span class="meal-item">{display}:{meals[key]}</span>')
-            
-            if not meal_items:
-                return ''
-            
+            for meal in  meals:
+                meal_items.append(f'<span class="meal-item">{meal}</span>')
+
             return f'''
             <div class="meals">
                 <div class="meal-info">
+                    <span class="icon"><span class="material-icons-round">restaurant</span></span>
                     {' '.join(meal_items)}
                 </div>
             </div>
             '''
 
+                
         def _generate_day_section(self, day_data, day_num):
 
             locations_html = '\n'.join(self._generate_schedule_items(location) 

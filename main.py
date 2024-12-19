@@ -116,14 +116,18 @@ async def itn_search(df: pd.DataFrame) -> pd.DataFrame:
         # 각 셀의 값에서 모든 빈칸을 지워줍니다.
         cleaned_row = [str(cell).replace(' ', '').lower() for cell in row]
         # 각 셀이 어떤 카테고리에 속하는지 확인
-        matched_categories = set()
+        cells_with_matches = 0  # 매칭된 셀의 수를 카운트
         
         for cell in cleaned_row:
+            has_match = False  # 현재 셀이 매칭되었는지 여부
             for category, aliases in column_aliases.items():
                 if any(alias.lower() in cell for alias in aliases):
-                    matched_categories.add(category)
+                    has_match = True
+                    break
+            if has_match:
+                cells_with_matches += 1
                     
-        if len(matched_categories) >= 3:
+        if cells_with_matches >= 3:
             idy = idx
             break
             
@@ -250,12 +254,13 @@ async def convert_df_to_json(df: pd.DataFrame, column_aliases) -> str:
                 if current_location["schedule"]:  # schedule이 있는 경우만 추가
                     day_data['locations'].append(current_location)
                 itinerary.append(day_data)
-            
+                
             day_str = clean_text(row[date_col])
+            
             day_data = {
                 "day": day_str,
                 "locations": [],
-                "meals": {}
+                "meals": []
             }
             
             # 새로운 날짜에서 이전 location_name이 있으면 새로운 current_location 생성
@@ -311,17 +316,18 @@ async def convert_df_to_json(df: pd.DataFrame, column_aliases) -> str:
         # 식사 정보 처리
         if meal_col is not None and pd.notna(row[meal_col]) and day_data is not None:
             meals = clean_text(row[meal_col]).split('\n')
-            meal_dict = {}
-            for meal in meals:
-                meal = meal.strip()
-                if meal.startswith('조식'):
-                    meal_dict['breakfast'] = meal.replace('조식', '').replace(':', '').strip()
-                elif meal.startswith('중식'):
-                    meal_dict['lunch'] = meal.replace('중식', '').replace(':', '').strip()
-                elif meal.startswith('석식'):
-                    meal_dict['dinner'] = meal.replace('석식', '').replace(':', '').strip()
-            if meal_dict:
-                day_data['meals'].update(meal_dict)
+            day_data['meals'].extend(meals)
+            # meal_dict = {}
+            # for meal in meals:
+            #     meal = meal.strip()
+            #     if meal.startswith('조식'):
+            #         meal_dict['breakfast'] = meal.replace('조식', '').replace(':', '').strip()
+            #     elif meal.startswith('중식'):
+            #         meal_dict['lunch'] = meal.replace('중식', '').replace(':', '').strip()
+            #     elif meal.startswith('석식'):
+            #         meal_dict['dinner'] = meal.replace('석식', '').replace(':', '').strip()
+            # if meal_dict:
+            #     day_data['meals'].update(meal_dict)
 
     # 마지막 day_data 처리
     if day_data is not None and current_location is not None:
@@ -346,12 +352,19 @@ async def convert_excel_to_html(excel_url: str):
     try:
         # URL에서 직접 DataFrame으로 읽기
         head_df, itn_df ,column_aliases = await read_excel_from_url(excel_url)
+
+        itn_df = await split_multiline_rows(itn_df)
         subData =  create_html(head_df)
-        subData['itinerary'], locations, places = await convert_df_to_json(itn_df,column_aliases)
+        subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
+        
         subData['file_url'] = excel_url
+        final_html = json2html.generate_itinerary_html(subData)
+        
+
+        # html 생성후 추가 정보 추가
         subData['locations'] = ','.join(locations)
         subData['places'] = extract_sorted_unique_words(','.join(places))
-        final_html = json2html.generate_itinerary_html(subData['itinerary'])
+
         result = {
             'html': final_html,
             'subData': subData,
@@ -413,8 +426,6 @@ async def convert_excel_to_html(
         subData['places'] = extract_sorted_unique_words(','.join(places))
         
         # JSON 2 html 
-        
-        
         return JSONResponse(content={
             'status': 'success',
             'html': final_html,

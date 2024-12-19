@@ -27,7 +27,7 @@ def format_cell(x):
 def create_html(df: pd.DataFrame) -> Tuple[str, Dict[str, str]]:
     # 초기화
     subData = dict()
-    subData['title'] = ''
+    subData['상품명'] = ''
     
     # HTML 시작 부분
     html_content = """
@@ -56,10 +56,10 @@ def create_html(df: pd.DataFrame) -> Tuple[str, Dict[str, str]]:
         if content.replace(' ', '').replace('|', ''):
             if title:
                 # 제목이 일정 타이틀인 경우
-                if not subData['title'] and ('일' in title or '박' in title):
-                    subData['title'] = title
+                if not subData['상품명'] and ('일' in title or '박' in title):
+                    subData['상품명'] = title
                 elif title.replace(' ', '') == '상품명':
-                    subData['title'] = content
+                    subData['상품명'] = content
                 else:
                     short_title = title.replace(' ', '').replace('\xa0', '')
                     # 가격 정보인 경우 특별 처리
@@ -82,7 +82,7 @@ def create_html(df: pd.DataFrame) -> Tuple[str, Dict[str, str]]:
         # 내용이 없는 경우
         else:
             # 첫 번째 일정 타이틀인 경우
-            if not subData['title'] and ('일' in title or '박' in title):
-                subData['title'] = title
+            if not subData['상품명'] and ('일' in title or '박' in title):
+                subData['상품명'] = title
     
     return  subData
