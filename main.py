@@ -21,16 +21,12 @@ import tempfile
 import os
 import subprocess
 
-from s3_uploader import S3FileUploader
-
-from head2html import create_html 
-from extract_words import extract_sorted_unique_words
-
-import datetime
-import unicodedata
-
-import json2html
-
+# Local imports
+from src.converters.json2html import json2html
+from src.converters.head2html import create_html
+from src.converters.extract_words import extract_sorted_unique_words
+from src.utils.s3_uploader import S3FileUploader
+from src.utils.split import split_multiline_rows
 
 app = FastAPI()
 
