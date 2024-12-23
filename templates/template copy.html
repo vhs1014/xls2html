@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>일정표</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+            max-width: 960px;
+            margin: 0 auto;
+            line-height: 1.6;
+            color: #2c3e50 !important;
+            background-color: #f8f9fa !important;
+        }
+        .title-section {
+            padding: 5px 20px;
+            background: #fff;
+            border-bottom: 1px solid #edf2f7;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            margin: 20px 0px;
+        }
+        .material-icons-round {
+            margin-top: 5px;
+            font-size: 16px;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 18px;
+            margin-bottom: 10px;
+            padding: 0 20px;
+        }
+
+        .day-section {
+            margin-bottom: 15px;
+            background: #fff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .day-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            padding: 15px 20px;
+            background: #fff;
+            border-bottom: 1px solid #edf2f7;
+            transition: background-color 0.3s ease;
+        }
+
+        .day-title:hover {
+            background-color: #f8f9fa;
+        }
+
+        .date {
+            color: #718096;
+            font-size: 14px;
+            margin-left: 10px;
+            font-weight: normal;
+        }
+
+        .day-content {
+            padding: 20px;
+            background: #fff;
+            transition: all 0.3s ease;
+        }
+
+        .day-content.collapsed {
+            display: none;
+        }
+
+        .toggle-icon {
+            color: #1a73e8;
+            transition: transform 0.3s ease;
+        }
+
+        .toggle-icon.collapsed {
+            transform: rotate(-180deg);
+        }
+
+        .schedule-item {
+            margin: 15px 0;
+            display: flex;
+            align-items: flex-start;
+            padding: 10px;
+            border-radius: 8px;
+            transition: background-color 0.3s ease;
+            position: relative;
+        }
+
+        .schedule-item:hover {
+            background-color: #f8f9fa;
+        }
+
+        .icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 10px;
+            flex-shrink: 0;
+            background: #fff;
+            z-index: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #1a73e8;
+        }
+
+        .icon.dot {
+            width: 6px;
+            height: 6px;
+            background-color: #718096;
+            border-radius: 50%;
+            margin: 9px 24px 9px 9px;
+        }
+
+        .icon.location {
+            color: #e53e3e;
+        }
+
+        .location {
+            font-weight: 600;
+            color: #2c3e50;
+            margin: 0px 8px 5px 0px;
+
+        }
+
+        .detail {
+            margin-left: 30px;
+            color: #718096;
+            font-size: 14px;
+        }
+
+        .meals {
+            margin-top: 20px;
+            padding: 8px 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .meal-info {
+            display: flex;
+            gap: 10px;
+            white-space: nowrap;
+            min-width: min-content;
+        }
+
+        .meal-item {
+            background: #fff;
+            padding: 4px 18px;
+            border-radius: 15px;
+            font-size: 13px;
+            color: #666;
+            flex-shrink: 0;
+        }
+
+        .schedule-item:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            left: 22px;
+            top: 24px;
+            bottom: -15px;
+            width: 1px;
+            border-left: 1px dashed #cbd5e0;
+        }
+        .download-button {
+            display: inline-block;
+            padding: 5px 40px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            font-size: 12px;
+            text-align: center;
+            transition: background-color 0.3s;
+        }
+
+        .download-button:hover {
+            background-color: #0056b3;
+        }
+        @media (max-width: 768px) {
+            body {
+                padding: 15px;
+            }
+
+            .day-title {
+                padding: 12px 15px;
+            }
+
+            .day-content {
+                padding: 15px;
+            }
+
+            .detail {
+                margin-left: 0px;
+            }
+
+            .schedule-item:not(:last-child)::after {
+                left: 21px;
+            }
+
+            .meals {
+                margin-top: 15px;
+                padding: 10px;
+            }
+
+            .meal-info {
+                font-size: 13px;
+                gap: 8px;
+            }
+
+            .meal-item {
+                font-size: 13px;
+                padding: 4px 8px;
+            }
+        }
+
+        .product-info {
+            margin-bottom: 40px;
+        }
+
+        .info-section {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .highlight {
+            color: #e53e3e;
+            font-weight: 500;
+        }
+
+
+        @media (max-width: 768px) {
+            .info-section {
+                padding: 15px;
+            }
+        }
+
+        .title-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+        }
+        
+        .print-button {
+            border: none;
+            cursor: pointer;
+            padding: 2px 10px;
+            background-color: #007bff;
+            color: white;
+            border-radius: 5px;
+            
+            transition: background-color 0.3s;
+        }
+        .material-icons-round {
+            font-size: 20px;
+        }
+        .print-button:hover {
+            background-color: rgba(0, 0, 0, 0.1);
+        }
+        
+        @media print {
+            .print-button {
+                display: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    {{content}}
+
+    <script>
+        const dayTitles = document.querySelectorAll('.day-title');
+
+        dayTitles.forEach(title => {
+            title.addEventListener('click', function () {
+                const content = this.nextElementSibling;
+                const icon = this.querySelector('.toggle-icon');
+
+                content.classList.toggle('collapsed');
+                icon.classList.toggle('collapsed');
+            });
+        });
+    
+        function () {
+            
+            document.body.style.maxWidth = '716px'
+            // const rootmain = document.getElementsByClassName('MuiBox-root css-0')[0]
+            const rootmain = document.querySelector('.day-section').parentElement
+            
+            if (rootmain) {
+                rootmain.style.display = 'flex'
+                rootmain.style.flexWrap = 'wrap'
+                rootmain.style.gap = '12px'
+                
+            } else {
+                document.body.style.display = 'flex'
+                document.body.style.flexWrap = 'wrap'
+                document.body.style.gap = '12px'
+            }
+
+            document.querySelectorAll('.info-section').forEach(element => {
+                element.style.display = 'flex'
+                element.style.flexWrap = 'wrap'
+
+            });
+
+            document.querySelectorAll('.detail').forEach(element => {
+                element.style.fontSize = '12.5px';
+            });
+            document.querySelectorAll('.schedule-item').forEach(element => {
+                element.style.width = '298px'
+            });
+            document.querySelectorAll('.day-section').forEach(element => {
+                element.style.width = '332px'
+                element.style.marginBottom = '0px'
+            });
+
+            document.querySelectorAll('.meal-item').forEach(element => {
+                element.style.padding = '15px 6px'
+            });
+
+            document.querySelectorAll('.meals').forEach(element => {
+                element.style.marginTop = '5px'
+                element.style.padding = '5px 5px'
+            });
+
+            document.querySelectorAll('.product-info').forEach(element => {
+                element.style.marginBottom = '0px'
+            });
+
+            document.querySelectorAll('.schedule-item').forEach(element => {
+                element.style.margin = '0px'
+            });
+
+            document.querySelectorAll('.download-button').forEach(element => {
+                element.style.padding = '5px 10px'
+            });
+
+
+            document.querySelectorAll('.day-section').forEach(element => {
+                element.style.boxShadow = 'none'
+                element.style.border = '1px solid #ccc'
+            });
+
+            document.querySelectorAll('.info-section').forEach(element => {
+                element.style.boxShadow = 'none'
+                element.style.border = '1px solid #ccc'
+            });
+
+
+
+
+            window.addEventListener('afterprint', function() {
+                console.log('프린터 대화상자가 닫혔습니다.');
+                location.reload();
+            });
+            window.print()
+        }
+    </script>
+</body>
+
+</html>
