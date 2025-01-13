@@ -30,7 +30,6 @@ import datetime
 import unicodedata
 
 import json2html
-from json2html import ItineraryHtmlGenerator
 
 
 app = FastAPI()
@@ -431,38 +430,24 @@ async def convert_excel_to_html(excel_url: str):
         head_df, itn_df ,column_aliases = await read_excel_from_url(excel_url)
 
         itn_df = await split_multiline_rows(itn_df)
-        subData = {}
+        subData =  create_html(head_df)
         subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
-        subData['file_url'] = result['file_url']
+        
+        subData['file_url'] = excel_url
         final_html = json2html.generate_itinerary_html(subData)
         
-        # 헤더 데이터 처리
-        headjson, head_html = create_html(head_df)
-        
-        # 일정 데이터 처리
-        subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
-        subData['file_url'] = result['file_url']
-        
-        # ItineraryHtmlGenerator를 사용하여 HTML 생성
-        generator = ItineraryHtmlGenerator(subData)
-        itinerary_html = generator.generate_html()  # 일정 HTML 생성 (상품명 제외)
-        
-        # 최종 HTML 생성
-        with open('./templates/template.html', 'r', encoding='utf-8') as f:
-            template = f.read()
-        final_html = template.replace('{{content}}', head_html + itinerary_html)
-        
-        # 추가 정보 업데이트
-        subData['locations'] = ','.join(locations).replace(' ', '')
+
+        # html 생성후 추가 정보 추가
+        subData['locations'] = ','.join(locations)
         subData['places'] = extract_sorted_unique_words(','.join(places))
-        subData.update(headjson)
-        
-        return JSONResponse(content={
-            'status': 'success',
+
+        result = {
             'html': final_html,
             'subData': subData,
-            'file_url': result['file_url'],
-        })
+            'file_url': excel_url
+        }
+        return JSONResponse(content=result , status_code=200)
+        # return HTMLResponse(content=final_html, status_code=200)
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"변환 실패: {str(e)}")
@@ -485,15 +470,15 @@ async def convert_excel_to_html(
     itn_id: Optional[int] = None,
     file_url: Optional[str] = None
 ):
-    try:
-        # 초기 검증
+    # try:
+        # 초기 result 변수 선언
         if not file.filename.endswith(('.xlsx', '.xls')):
             raise HTTPException(status_code=400, detail="엑셀 파일만 업로드 가능합니다.")
         
-        # 엑셀 파일 처리
-        head_df, itn_df, column_aliases = await read_excel_from_upload(file)
         
-        # 파일 업로드 처리
+        if file.filename.endswith(('.xlsx', '.xls')):
+            # 엑셀 파일 처리
+            head_df, itn_df ,column_aliases= await read_excel_from_upload(file)
         try:
             if itn_id and file_url:
                 result = uploader.update_file(file.file, file.filename, file_url)
@@ -506,31 +491,17 @@ async def convert_excel_to_html(
         except Exception as e:
             raise Exception(f"파일 처리 실패: {str(e)}")
         
-        # 데이터 처리
         itn_df = await split_multiline_rows(itn_df)
-        subData = {}
-        
-        # 헤더 데이터 처리
-        headjson, head_html = create_html(head_df)
-        
-        # 일정 데이터 처리
+        subData =  create_html(head_df)
         subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
         subData['file_url'] = result['file_url']
+        final_html = json2html.generate_itinerary_html(subData)
         
-        # ItineraryHtmlGenerator를 사용하여 HTML 생성
-        generator = ItineraryHtmlGenerator(subData)
-        itinerary_html = generator.generate_html()  # 일정 HTML 생성 (상품명 제외)
-        
-        # 최종 HTML 생성
-        with open('./templates/template.html', 'r', encoding='utf-8') as f:
-            template = f.read()
-        final_html = template.replace('{{content}}', head_html + itinerary_html)
-        
-        # 추가 정보 업데이트
+        # html 생성후 추가 정보 추가
         subData['locations'] = ','.join(locations).replace(' ', '')
         subData['places'] = extract_sorted_unique_words(','.join(places))
-        subData.update(headjson)
         
+        # JSON 2 html 
         return JSONResponse(content={
             'status': 'success',
             'html': final_html,
@@ -538,11 +509,11 @@ async def convert_excel_to_html(
             'file_url': result['file_url'],
         })
             
-    except Exception as e:
-        return JSONResponse(
-            content={'error': str(e)}, 
-            status_code=400
-        )
+    # except Exception as e:
+    #     return JSONResponse(
+    #         content={'error': str(e)}, 
+    #         status_code=400
+    #     )
 
 @app.post("/itinerary/send-email")
 async def send_email(email_request: EmailRequest):

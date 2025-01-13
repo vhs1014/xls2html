@@ -39,6 +39,46 @@ class S3FileUploader:
         
         # 최종 경로 (단일 폴더 구조)
         return f"{date_folder}/{filename}"
+
+    def file_upload(self, file_obj: BinaryIO, original_filename: str, companyNo: int ) -> dict:
+        
+        #  파일 포인터를 처음으로 되돌림
+        file_obj.seek(0)
+        file_path = f"{companyNo}/counseling/Schedule/"
+
+        filename, extension = os.path.splitext(original_filename)
+        s3_key =  original_filename
+        
+        counter = 1
+        while True:
+            try:
+                self.s3_client.head_object(Bucket='orgin', Key=file_path + s3_key)
+                s3_key = f"{filename}({counter}){extension}"
+                counter += 1
+            except:
+                break
+
+        self.s3_client.upload_fileobj(
+            file_obj,
+            'orgin',
+            file_path + s3_key,
+            ExtraArgs={
+                'ContentType': self._get_content_type(original_filename),
+                'Metadata': {
+                    'upload_date': datetime.now().strftime('%Y-%m-%d'),
+                    'file_type': self._get_file_extension(original_filename)
+                }
+            }
+        )
+        file_url = f"{self.endpoint}/orgin/{file_path}{s3_key}"
+        return {
+            'status': 'success',
+            'file_path': file_path,
+            'file_url': file_url,
+            'original_filename': original_filename
+        }
+        
+
     
     def update_file(self, file_obj: BinaryIO, original_filename: str, file_url: str) -> dict:  
         try:
@@ -54,10 +94,11 @@ class S3FileUploader:
                     'ContentType': self._get_content_type(original_filename),
                     'Metadata': {
                         'upload_date': datetime.now().strftime('%Y-%m-%d'),
-                        'file_type': 'excel'
+                        'file_type': extension
                     }
                 }
             )
+            
             return {
                 'status': 'success',
                 'file_path': file_path,
@@ -85,7 +126,7 @@ class S3FileUploader:
                     'ContentType': self._get_content_type(original_filename),
                     'Metadata': {
                         'upload_date': datetime.now().strftime('%Y-%m-%d'),
-                        'file_type': 'excel'
+                        'file_type': self._get_file_extension(original_filename)
                     }
                 }
             )
@@ -120,24 +161,26 @@ class S3FileUploader:
         
         _, ext = os.path.splitext(filename.lower())
         return content_types.get(ext, 'application/octet-stream')
+
+    def _get_file_extension(self, filename: str) -> str:
+        """Get file extension from filename without the dot."""
+        return os.path.splitext(filename)[1][1:].lower()
     
     
-    {
-          "index": 59985,
-          "name": "방콕",
-          "iata_code": "BKK",
-          "aliases": [
-            "방콕", "bangkok", "bkk", "방콬", "방꼭", "방꽁", "방꾹",
-            "수완나품", "수완나폼", "수완나붐", "수완나품공항",
-            "suvarnabhumi", "수완나부미", "수완나프미",
-            "방케", "방쾍", "방콕시티", "방곡", "방꺽"
-          ],
-          "related_keywords": [
-            "카오산로드", "씨암", "아속", "짜뚜짝", "터미널21",
-            "왓프라깨우", "왓아룬", "아시아티크", "수쿰빗", "프롬퐁"
-          ],
-          "full_name": "방콕(수완나품)",
-          "airport_name": "수완나품 국제공항"
-        },
-    
-    
+    # {
+    #       "index": 59985,
+    #       "name": "방콕",
+    #       "iata_code": "BKK",
+    #       "aliases": [
+    #         "방콕", "bangkok", "bkk", "방콬", "방꼭", "방꽁", "방꾹",
+    #         "수완나품", "수완나폼", "수완나붐", "수완나품공항",
+    #         "suvarnabhumi", "수완나부미", "수완나프미",
+    #         "방케", "방쾍", "방콕시티", "방곡", "방꺽"
+    #       ],
+    #       "related_keywords": [
+    #         "카오산로드", "씨암", "아속", "짜뚜짝", "터미널21",
+    #         "왓프라깨우", "왓아룬", "아시아티크", "수쿰빗", "프롬퐁"
+    #       ],
+    #       "full_name": "방콕(수완나품)",
+    #       "airport_name": "수완나품 국제공항"
+    #     },

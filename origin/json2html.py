@@ -93,25 +93,6 @@ def generate_itinerary_html(json_data):
             }
             
             self.exclude_fields = {'locations', 'places', 'itinerary'}
-            
-            self.special_handler_rules = {
-                ('출발', '일정', '날짜'): self._process_multiline,
-                ('가격', 'price', '원'): self._format_price_with_html,
-                ('추천', '특전'): self._process_list,
-                ('선택', '옵션', '투어'): self._process_multiline,
-                ('안내', '참고', 'remark', '유의'): self._process_remarks,
-            }
-
-            self.max_columns = self._calculate_max_columns()
-
-        def _calculate_max_columns(self):
-            """모든 값들의 최대 컬럼 수를 계산"""
-            max_cols = 1
-            for key, value in self.data.items():
-                if key not in self.exclude_fields and isinstance(value, str) and '||' in value:
-                    cols = len([x for x in value.split('||') if x.strip()])
-                    max_cols = max(max_cols, cols)
-            return max_cols
 
         def _get_display_order(self):
             """JSON의 원래 키 순서를 완벽하게 유지하면서 일부 필드만 우선순위 부여"""
@@ -183,7 +164,7 @@ def generate_itinerary_html(json_data):
             # \n과 ||이 모두 있는지 확인
             has_newline = '\n' in content_str or '\r' in content_str
             has_valid_separator = False
-            
+            # print(content_str)
             if '||' in content_str:
                 # 실제 데이터가 있는 ||인지 확인
                 rows = content_str.split('\n')
@@ -195,7 +176,7 @@ def generate_itinerary_html(json_data):
             
             # \n과 데이터가 있는 ||이 모두 있으면 테이블로 처리
             if has_newline and has_valid_separator:
-                content_html = self._process_table(content_str)
+                content_html = self._process_table(content_str, key)
             else:
                 # \n만 있고 데이터가 있는 ||이 없으면 멀티라인으로 처리
                 content_html = self._process_multiline(content_str)
@@ -219,10 +200,10 @@ def generate_itinerary_html(json_data):
                 .info-item {{
                     display: flex;
                     align-items: flex-start;
-                    padding: 15px 20px;
+                    padding: 10px;
                 }}
                 .icon {{
-                    margin-right: 15px;
+                    margin-right: 10px;
                 }}
                 .content {{
                     flex: 1;
@@ -241,71 +222,87 @@ def generate_itinerary_html(json_data):
                     color: #666;
                     padding-left: 2px;
                 }}
-                @media (max-width: 768px) {{
-                    .detail-button {{
-                        flex: 1 0 100%;
-                        max-width: 100%;
-                    }}
+
+                /* 테이블 스타일 */
+                .table-container {{
+                    width: 100%;
+                    margin: 0.5rem 0;
                 }}
+                
                 .info-table {{
                     width: 100%;
                     border-collapse: separate;
                     border-spacing: 0;
-                    margin: 15px 0;
                     border-radius: 8px;
                     overflow: hidden;
                     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
                     background: white;
                     font-size: 14px;
+                    table-layout: fixed;
                 }}
-
-                .info-table thead {{
-                    background: #f8f9fa;
+                
+                .info-table td {{
+                    padding: 12px 8px;
+                    color: #4a5568;
+                    word-break: keep-all;
+                    white-space: normal;
+                    line-height: 1.4;
+                    vertical-align: top;
                 }}
-
-                .info-table th {{
-                    padding: 8px;
-                    text-align: left;
+                
+                .info-table tr:first-child td {{
                     font-weight: 600;
                     color: #344767;
+                    background: #f8f9fa;
                 }}
-
-                .info-table td {{
-                    padding: 8px;
-                    color: #4a5568;
-                }}
-
-                .info-table tbody tr:last-child td {{
-                    border-bottom: none;
-                }}
-
-                .info-table tbody tr:hover {{
-                    background-color: #f8fafc;
-                    transition: background-color 0.2s ease;
-                }}
-
-                .info-table th:first-child,
-                .info-table td:first-child {{
-                    padding-left: 12px;
-                }}
-
-                .info-table th:last-child,
-                .info-table td:last-child {{
-                    padding-right: 12px;
-                }}
-
-                /* 반응형 테이블 스타일 */
-                @media (max-width: 768px) {{
-                    .info-table {{
-                        display: block;
-                        overflow-x: auto;
-                        -webkit-overflow-scrolling: touch;
+                
+                @media screen and (max-width: 768px) {{
+                    .table-container {{
+                        margin: 0;
                     }}
                     
-                    .info-table th,
+                    .info-table {{
+                        box-shadow: none;
+                    }}
+                    
+                    .info-table tbody {{
+                        display: flex;
+                        flex-direction: column;
+                        gap: 12px;
+                        padding: 12px 8px;
+                    }}
+                    
+                    .info-table tr {{
+                        display: flex;
+                        flex-direction: column;
+                        background: white;
+                        border-radius: 8px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        margin: 0;
+                        overflow: hidden;
+                    }}
+                    
+                    .info-table tr:first-child {{
+                        background: white;
+                    }}
+                    
+                    .info-table tr:first-child td {{
+                        background: none;
+                    }}
+                    
                     .info-table td {{
-                        white-space: nowrap;
-                        min-width: 120px;
+                        display: flex;
+                        padding: 12px;
+                        align-items: flex-start;
+                        border-bottom: 1px solid #f0f0f0;
+                        line-height: 1.4;
+                    }}
+                    
+                    .info-table td:last-child {{
+                        border-bottom: none;
+                    }}
+                    .material-icons-round {{
+                        font-family: 'Material Icons Round', sans-serif !important;
                     }}
                 }}
             </style>
@@ -315,14 +312,59 @@ def generate_itinerary_html(json_data):
             ''')
             sections.append('<div class="info-section">')
             
-            # JSON의 원래 순서대로 필드 처리
+            # 제목없는 테이플 처리를 위한 구문 
+            # value를 ||로 분리해서 첫배열 빼고 2개이상 빈값이 아닌 데이터를 추출 
+            # 그런 데이터가 연속 두개 이상 나오은 key값을 배열로 추출 해서 주요정보 라는 key 의 값으로 적용
+            # 훙 _process_table 함수로 전달
             display_order = self._get_display_order()
+
+            tablekeys = []
+            key_groups = []  # 연속된 키들을 그룹으로 저장
+            current_group = []
+            
+            sorted_keys = sorted([key for key in self.data.keys() if key not in self.exclude_fields], 
+                               key=lambda x: int(x.split('_')[-1]) if x.split('_')[-1].isdigit() else 0)
+            
+            for key in sorted_keys:
+                value = self.data[key]
+                if isinstance(value, str) and '||' in value:
+                    cols = [x.strip() for x in value.split('||')[1:] if x.strip()]
+                    if len(cols) >= 2:
+                        current_group.append(key)
+                    else:
+                        if len(current_group) >= 2:
+                            key_groups.append(current_group)
+                        current_group = []
+                else:
+                    if len(current_group) >= 2:
+                        key_groups.append(current_group)
+                    current_group = []
+            
+            # 마지막 그룹 처리
+            if len(current_group) >= 2:
+                key_groups.append(current_group)
+            
+            # 결과 데이터 구조화
+            formatted_entries = []
+            for group in key_groups:
+                for key in group:
+                    formatted_entries.append(f"{key}||{self.data[key]}")
+            
+            result_data = {"주요정보": "\r\n".join(formatted_entries)}
+            print(result_data)
+            # print(key_groups[0])
             
             # 모든 필드를 원래 순서대로 처리
             for field in display_order:
                 if field in self.data:
-                    handler = self._get_handler_for_key(field)
-                    sections.append(handler(self.data[field]))
+                    if key_groups and field in key_groups[0]:
+                        handler = self._get_handler_for_key('주요정보')
+                        sections.append(handler(result_data['주요정보']))
+                        for key in key_groups[0]:
+                            self.data.pop(key, None)
+                    else:    
+                        handler = self._get_handler_for_key(field)
+                        sections.append(handler(self.data[field]))
             
             sections.append('</div></div>')
             
@@ -332,12 +374,6 @@ def generate_itinerary_html(json_data):
                     sections.append(self._generate_day_section(day, i))
             
             return '\n'.join(sections)
-
-        def _format_price_with_html(self, price_str):
-            if not isinstance(price_str, str):
-                return f'<div class="detail">{price_str}</div>'
-            prices = price_str.split('|')
-            return '\n'.join([f'<div class="detail">{price.strip()}</div>' for price in prices])
 
         def _process_multiline(self, text):
             lines = []
@@ -354,178 +390,99 @@ def generate_itinerary_html(json_data):
                     if line:
                         lines.append(line)
             
-            if not lines:
-                return '<div class="detail">내용 없음</div>'
+            # if not lines:
+            #     return '<div class="detail">내용 없음</div>'
             
             return '<div class="detail">' + '<br>'.join(lines) + '</div>'
 
-        def _process_list(self, text, prefix=''):
-            return text.replace('* ', '')
-
-        def _process_remarks(self, text):
-            items = text.replace('* ', '').split('\r\n')
-            return '\n'.join([f'<div class="detail">• {item}</div>' for item in items])
-
-        def _process_table(self, content):
+        def _process_table(self, content, key):
             """줄바꿈과 || 구분자가 있는 컨텐츠를 테이블로 처리"""
-            rows = [row.strip() for row in re.split(r'\r\n|\n', content) if row.strip()]
-            if not rows:
-                return '<div class="detail">내용 없음</div>'
+            # rows = [row.strip() for row in re.split(r'\r\n|\n', content) if row.strip()]
+            rows = content.split('\r\n')
+            # if not rows:
+            #     return '<div class="detail">내용 없음</div>'
 
-            table_html = ['<div class="table-container"><table class="info-table">']
+            table_html = ['<div class="table-container"><table class="info-table"><tbody>']
             
-            # 첫 번째 행은 헤더로 처리
-            header = rows[0]
-            header_cols = [col.strip() for col in header.split('||')]
-            
-            # 헤더 정보 저장 (모바일 카드 뷰에서 사용)
-            headers = []
-            for col in header_cols:
-                headers.append(col if col.strip() else '')
-            
-            table_html.append('<thead><tr>')
-            for col in header_cols:
-                table_html.append(f'<th>{col}</th>')
-            table_html.append('</tr></thead>')
-            
-            if len(rows) > 1:
-                table_html.append('<tbody>')
+            def process_row(cells, is_header=False):
+                table_html.append('<tr>')
+                current_colspan = 1
+                prev_td_index = -1
                 
-                # 데이터 행 처리
-                for row in rows[1:]:
-                    cells = [cell.strip() for cell in row.split('||')]
-                    
-                    # 데이터 셀 개수를 헤더 개수에 맞추기
-                    while len(cells) < len(headers):
+                for j, cell in enumerate(cells):
+                    cell_content = cell if is_header else cell.replace('\n', '<br>')
+                    if not cell_content and prev_td_index >= 0:
+                            current_colspan += 1
+                            table_html[prev_td_index] = table_html[prev_td_index].replace('<td', f'<td colspan="{current_colspan}"')
+                                            
+                    else:
+                        current_colspan = 1
+                        data_label = f' data-label="{labels[j]}"' if not is_header else ''
+                        cell_html = f'<td{data_label}>{cell_content}</td>'
+                        table_html.append(cell_html)
+                        prev_td_index = len(table_html) - 1
+                table_html.append('</tr>')
+            
+            # 모든 행을 동일하게 처리
+            for i, row in enumerate(rows):
+                cells = [cell.strip() for cell in row.split('||')]
+                
+                # 첫 번째 행의 셀을 레이블로 저장
+                if i == 0:
+                    labels = cells
+                    process_row(cells, is_header=True)
+                else:
+                    # 데이터 셀 개수를 첫 번째 행 개수에 맞추기
+                    # cells.insert(0, '')   
+                    if key != '주요정보': cells.pop(0)
+                    while len(cells) < len(labels) + 1 :
                         cells.append('')
-                    cells = cells[:len(headers)]  # 헤더보다 많은 셀은 제거
-                    
-                    # 데스크톱 뷰용 행
-                    table_html.append('<tr>')
-                    for i, cell in enumerate(cells):
-                        cell_content = cell.replace('\n', '<br>')
-                        table_html.append(f'<td data-label="{headers[i]}">{cell_content}</td>')
-                    table_html.append('</tr>')
-                    
-                    # 모바일 카드 뷰용 요소
-                    table_html.append('<tr class="mobile-card">')
-                    for i, cell in enumerate(cells):
-                        cell_content = cell.replace('\n', '<br>')
-                        if headers[i].strip():  # 헤더가 비어있지 않은 경우만 표시
-                            table_html.append(f'''
-                                <td class="card-item">
-                                    <div class="card-label">{headers[i]}</div>
-                                    <div class="card-value">{cell_content}</div>
-                                </td>
-                            ''')
-                    table_html.append('</tr>')
-                
-                table_html.append('</tbody>')
+                    cells = cells[:len(labels)]  # 첫 번째 행보다 많은 셀은 제거
+                    process_row(cells)
             
-            table_html.append('</table></div>')
-            
-            # CSS 스타일 추가
-            table_html.append('''
-            <style>
-                .table-container {
-                    width: 100%;
-                    overflow-x: auto;
-                    margin: 1rem 0;
-                }
-                
-                .info-table {
-                    width: 100%;
-                    border-collapse: separate;
-                    border-spacing: 0;
-                    border-radius: 8px;
-                    overflow: hidden;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                    background: white;
-                    font-size: 14px;
-                }
-                
-                .info-table th {
-                    background: #f8f9fa;
-                    padding: 8px;
-                    text-align: left;
-                    font-weight: 600;
-                    color: #344767;
-                }
-                
-                .info-table td {
-                    padding: 8px;
-                    color: #4a5568;
-                }
-                
-                .info-table tr:last-child td {
-                    border-bottom: none;
-                }
-                
-                .mobile-card {
-                    display: none;
-                }
-                
-                @media screen and (max-width: 768px) {
-                    .info-table thead {
-                        display: none;
-                    }
-                    
-                    .info-table tr {
-                        display: none;
-                    }
-                    
-                    .info-table .mobile-card {
-                        display: flex;
-                        flex-direction: column;
-                        background: white;
-                        margin-bottom: 1rem;
-                        border-radius: 8px;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    }
-                    
-                    .info-table .card-item {
-                        display: flex;
-                        padding: 12px;
-                    }
-                    
-                    .info-table .card-label {
-                        font-weight: 600;
-                        color: #344767;
-                        width: 35%;
-                        padding-right: 12px;
-                    }
-                    
-                    .info-table .card-value {
-                        color: #4a5568;
-                        width: 65%;
-                    }
-                    
-                    .info-table .mobile-card:last-child {
-                        margin-bottom: 0;
-                    }
-                    
-                    .info-table .card-item:last-child {
-                        border-bottom: none;
-                    }
-                }
-            </style>
-            ''')
-            
+            table_html.append('</tbody></table></div>')
             return '\n'.join(table_html)
 
+        def is_valid_flight_number(self, flight_str):
+            if not flight_str:
+                return False
+            return bool(re.match(r'^[A-Z]{2}\d+$', flight_str.strip()))
+
+        def _process_schedule(self, schedule):
+            """스케줄 정보를 HTML로 변환"""
+            schedule_html = []
+            for item in schedule:
+                time = item.get('time', '')
+                flight = item.get('flight', '')
+                details = item.get('details', [])
+                
+                details_html = []
+                for detail in details:
+                    detail_text = detail
+                    if flight and time:
+                        detail_text = f"{detail} (<strong>{flight}</strong>, {time})"
+                    elif flight:
+                        detail_text = f"{detail} (<strong>{flight}</strong>)"
+                    elif time:
+                        detail_text = f"{detail} ({time})"
+                    details_html.append(f'<div class="detail-row"><span class="detail-text">{detail_text}</span></div>')
+                
+                details_html = ''.join(details_html)
+                schedule_html.append(f'<tr><td class="detail">{details_html}</td></tr>')
+            
+            return '\n'.join(schedule_html)
+
         def _generate_schedule_items(self, location_data):
-            icon = "flight" if "flight" in location_data else "place"
+            icon = "flight" if any(self.is_valid_flight_number(item.get('flight', '')) for item in location_data.get('schedule', [])) else "place"
             
             schedule_html = []
             if 'schedule' in location_data:
-                for item in location_data['schedule']:
-                    time = item.get('time', '')
-                    for detail in item.get('details', []):
-                        if time:
-                            schedule_html.append(f'<div class="detail">{detail} ({time})</div>')
-                        else:
-                            schedule_html.append(f'<div class="detail">{detail}</div>')
-
+                schedule_html.append('<table class="schedule-table">')
+                schedule_html.append('<tbody>')
+                schedule_html.append(self._process_schedule(location_data['schedule']))
+                schedule_html.append('</tbody>')
+                schedule_html.append('</table>')
+            
             return f'''
             <div class="schedule-item">
                 <span class="icon">

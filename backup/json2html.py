@@ -164,7 +164,7 @@ def generate_itinerary_html(json_data):
             # \n과 ||이 모두 있는지 확인
             has_newline = '\n' in content_str or '\r' in content_str
             has_valid_separator = False
-            print(content_str)
+            # print(content_str)
             if '||' in content_str:
                 # 실제 데이터가 있는 ||인지 확인
                 rows = content_str.split('\n')
@@ -176,7 +176,7 @@ def generate_itinerary_html(json_data):
             
             # \n과 데이터가 있는 ||이 모두 있으면 테이블로 처리
             if has_newline and has_valid_separator:
-                content_html = self._process_table(content_str)
+                content_html = self._process_table(content_str, key)
             else:
                 # \n만 있고 데이터가 있는 ||이 없으면 멀티라인으로 처리
                 content_html = self._process_multiline(content_str)
@@ -194,131 +194,61 @@ def generate_itinerary_html(json_data):
             '''
 
         def generate_html(self):
-            sections = ['<div class="product-info">']
-            sections.append(f'''
-            <style>
-                .info-item {{
-                    display: flex;
-                    align-items: flex-start;
-                    padding: 10px;
-                }}
-                .icon {{
-                    margin-right: 10px;
-                }}
-                .content {{
-                    flex: 1;
-                }}
-                .title {{
-                    font-weight: bold;
-                    margin-bottom: 10px;
-                }}
-                .title-with-content {{
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                    font-weight: bold;
-                }}
-                .detail {{
-                    color: #666;
-                    padding-left: 2px;
-                }}
-
-                /* 테이블 스타일 */
-                .table-container {{
-                    width: 100%;
-                    margin: 0.5rem 0;
-                }}
-                
-                .info-table {{
-                    width: 100%;
-                    border-collapse: separate;
-                    border-spacing: 0;
-                    border-radius: 8px;
-                    overflow: hidden;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                    background: white;
-                    font-size: 14px;
-                    table-layout: fixed;
-                }}
-                
-                .info-table td {{
-                    padding: 12px 8px;
-                    color: #4a5568;
-                    word-break: keep-all;
-                    white-space: normal;
-                    line-height: 1.4;
-                    vertical-align: top;
-                }}
-                
-                .info-table tr:first-child td {{
-                    font-weight: 600;
-                    color: #344767;
-                    background: #f8f9fa;
-                }}
-                
-                @media screen and (max-width: 768px) {{
-                    .table-container {{
-                        margin: 0;
-                    }}
-                    
-                    .info-table {{
-                        box-shadow: none;
-                    }}
-                    
-                    .info-table tbody {{
-                        display: flex;
-                        flex-direction: column;
-                        gap: 12px;
-                        padding: 12px 8px;
-                    }}
-                    
-                    .info-table tr {{
-                        display: flex;
-                        flex-direction: column;
-                        background: white;
-                        border-radius: 8px;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                        margin: 0;
-                        overflow: hidden;
-                    }}
-                    
-                    .info-table tr:first-child {{
-                        background: white;
-                    }}
-                    
-                    .info-table tr:first-child td {{
-                        background: none;
-                    }}
-                    
-                    .info-table td {{
-                        display: flex;
-                        padding: 12px;
-                        align-items: flex-start;
-                        border-bottom: 1px solid #f0f0f0;
-                        line-height: 1.4;
-                    }}
-                    
-                    .info-table td:last-child {{
-                        border-bottom: none;
-                    }}
-                    
-
-                }}
-            </style>
-            <div class="title-section">
-                <h1>{self.data.get("상품명", "")}</h1>
-            </div>
-            ''')
-            sections.append('<div class="info-section">')
             
-            # JSON의 원래 순서대로 필드 처리
+            
+            # 제목없는 테이플 처리를 위한 구문 
+            # value를 ||로 분리해서 첫배열 빼고 2개이상 빈값이 아닌 데이터를 추출 
+            # 그런 데이터가 연속 두개 이상 나오은 key값을 배열로 추출 해서 주요정보 라는 key 의 값으로 적용
+            # 훙 _process_table 함수로 전달
             display_order = self._get_display_order()
+
+            tablekeys = []
+            key_groups = []  # 연속된 키들을 그룹으로 저장
+            current_group = []
+            
+            sorted_keys = sorted([key for key in self.data.keys() if key not in self.exclude_fields], 
+                               key=lambda x: int(x.split('_')[-1]) if x.split('_')[-1].isdigit() else 0)
+            
+            for key in sorted_keys:
+                value = self.data[key]
+                if isinstance(value, str) and '||' in value:
+                    cols = [x.strip() for x in value.split('||')[1:] if x.strip()]
+                    if len(cols) >= 2:
+                        current_group.append(key)
+                    else:
+                        if len(current_group) >= 2:
+                            key_groups.append(current_group)
+                        current_group = []
+                else:
+                    if len(current_group) >= 2:
+                        key_groups.append(current_group)
+                    current_group = []
+            
+            # 마지막 그룹 처리
+            if len(current_group) >= 2:
+                key_groups.append(current_group)
+            
+            # 결과 데이터 구조화
+            formatted_entries = []
+            for group in key_groups:
+                for key in group:
+                    formatted_entries.append(f"{key}||{self.data[key]}")
+            
+            result_data = {"주요정보": "\r\n".join(formatted_entries)}
+            print(result_data)
+            # print(key_groups[0])
             
             # 모든 필드를 원래 순서대로 처리
             for field in display_order:
                 if field in self.data:
-                    handler = self._get_handler_for_key(field)
-                    sections.append(handler(self.data[field]))
+                    if key_groups and field in key_groups[0]:
+                        handler = self._get_handler_for_key('주요정보')
+                        sections.append(handler(result_data['주요정보']))
+                        for key in key_groups[0]:
+                            self.data.pop(key, None)
+                    else:    
+                        handler = self._get_handler_for_key(field)
+                        sections.append(handler(self.data[field]))
             
             sections.append('</div></div>')
             
@@ -344,16 +274,17 @@ def generate_itinerary_html(json_data):
                     if line:
                         lines.append(line)
             
-            if not lines:
-                return '<div class="detail">내용 없음</div>'
+            # if not lines:
+            #     return '<div class="detail">내용 없음</div>'
             
             return '<div class="detail">' + '<br>'.join(lines) + '</div>'
 
-        def _process_table(self, content):
+        def _process_table(self, content, key):
             """줄바꿈과 || 구분자가 있는 컨텐츠를 테이블로 처리"""
-            rows = [row.strip() for row in re.split(r'\r\n|\n', content) if row.strip()]
-            if not rows:
-                return '<div class="detail">내용 없음</div>'
+            # rows = [row.strip() for row in re.split(r'\r\n|\n', content) if row.strip()]
+            rows = content.split('\r\n')
+            # if not rows:
+            #     return '<div class="detail">내용 없음</div>'
 
             table_html = ['<div class="table-container"><table class="info-table"><tbody>']
             
@@ -364,10 +295,10 @@ def generate_itinerary_html(json_data):
                 
                 for j, cell in enumerate(cells):
                     cell_content = cell if is_header else cell.replace('\n', '<br>')
-                    if not cell_content:
-                        if prev_td_index >= 0:
+                    if not cell_content and prev_td_index >= 0:
                             current_colspan += 1
                             table_html[prev_td_index] = table_html[prev_td_index].replace('<td', f'<td colspan="{current_colspan}"')
+                                            
                     else:
                         current_colspan = 1
                         data_label = f' data-label="{labels[j]}"' if not is_header else ''
@@ -386,7 +317,9 @@ def generate_itinerary_html(json_data):
                     process_row(cells, is_header=True)
                 else:
                     # 데이터 셀 개수를 첫 번째 행 개수에 맞추기
-                    while len(cells) < len(labels):
+                    # cells.insert(0, '')   
+                    if key != '주요정보': cells.pop(0)
+                    while len(cells) < len(labels) + 1 :
                         cells.append('')
                     cells = cells[:len(labels)]  # 첫 번째 행보다 많은 셀은 제거
                     process_row(cells)
