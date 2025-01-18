@@ -29,9 +29,9 @@ from extract_words import extract_sorted_unique_words
 import datetime
 import unicodedata
 
-import json2html
-from json2html import ItineraryHtmlGenerator
-
+import itn2html
+from itn2html import ItineraryHtmlGenerator
+from typing import List, Dict
 
 app = FastAPI()
 
@@ -44,7 +44,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
- 
+# class DataFrameInput(BaseModel):
+#     # DataFrame을 JSON 형식으로 받기 위한 Pydantic 모델
+#     columns: List[str]
+#     data: List[List]
+
+# class ProcessedResult(BaseModel):
+#     # 처리된 결과를 반환하기 위한 Pydantic 모델
+#     summary: Dict
+#     processed_data: List[Dict]
+class TableData(BaseModel):
+    tableData: List[List[str]]
+     
 uploader = S3FileUploader()
 # 정적 파일 경로를 /itinerary/static으로 설정
 app.mount("/itinerary/static", StaticFiles(directory="static"), name="static")
@@ -115,11 +126,11 @@ async def  split_multiline_rows(df: pd.DataFrame) -> pd.DataFrame:
 async def itn_search(df: pd.DataFrame) -> pd.DataFrame:
     # 컬럼 매핑 정의
     column_aliases = {
-        'date': ['일자', '날짜', '순번', '일시', 'Date', 'Day', 'No', '월/일', '일차'],
-        'place': ['지역', '장소', 'place', 'city', '도시', '여행지', '행선지'],
-        'transport': ['교통편', '이동수단', '교통', 'Trans', 'Transport'],
+        'date': ['일자', '날짜', '순번', '일시', 'Date', 'Day', 'No', '월/일', '일차' ],
+        'place': ['지역', '장소', 'place', 'city', '도시', '여행지', '행선지', '방문도시', '방문장소'],
+        'transport': ['교통편', '이동수단', '교통', 'Trans', 'Transport', '구분'],
         'time': ['시간', 'time'],
-        'itinerary': ['주요일정', '일정', '관광지', 'itinerary', '여정'],
+        'itinerary': ['주요일정', '일정', '관광지', 'itinerary', '여정', '세부내용', '세부일정', '주요내용', '주요관광지'],
         'meal': ['식사', 'meal', 'meals']
     }
     
@@ -147,15 +158,25 @@ async def itn_search(df: pd.DataFrame) -> pd.DataFrame:
     head_df = df.iloc[:idy]  # 헤더 부분
     itn_df = df.iloc[idy:]   # 일정 부분
     
+    # head_df 처리
+    head_df = head_df.loc[:, (head_df != '').any()]  # 모든 값이 빈 문자열인 열 제거
+    head_df = head_df.loc[(head_df != '').any(axis=1)]  # 모든 값이 빈 문자열인 행 제거
+
+    # itn_df 처리
+    itn_df = itn_df.loc[:, (itn_df != '').any()]     # 모든 값이 빈 문자열인 열 제거
+    itn_df = itn_df.loc[(itn_df != '').any(axis=1)]  # 모든 값이 빈 문자열인 행 제거
+
     # head, itn 각각 빈줄, 빈칸 제거
     head_df = head_df.dropna(axis=1, how='all')   
-    head_df.columns = range(len(head_df.columns))  
     head_df = head_df.dropna(axis=0, how='all') 
     
     itn_df = itn_df.dropna(axis=1, how='all')   
-    itn_df.columns = range(len(itn_df.columns))  
     itn_df = itn_df.dropna(axis=0, how='all')
-    
+
+
+    head_df.columns = range(len(head_df.columns))  
+    itn_df.columns = range(len(itn_df.columns))      
+
     return head_df, itn_df, column_aliases
     
 async def read_excel_from_upload(file: UploadFile) -> pd.DataFrame:
@@ -259,6 +280,21 @@ async def convert_df_to_json(df: pd.DataFrame, column_aliases) -> str:
     itinerary_col = next((col for col, type_ in column_types.items() if type_ == 'itinerary'), None)
     meal_col = next((col for col, type_ in column_types.items() if type_ == 'meal'), None)
     
+    # depTime과 arrTime 설정
+    depTime = None
+    arrTime = None
+    if time_col is not None:
+        # 시간 형식을 체크하는 정규식 패턴
+        time_pattern = re.compile(r'^\d{1,2}:\d{2}$')
+        
+        # 시간 형식에 맞는 값만 필터링
+        time_values = [str(val).strip() for val in df[time_col].dropna() 
+                      if isinstance(val, (str, int, float)) and 
+                      time_pattern.match(str(val).strip())]
+        
+        if time_values:
+            depTime = time_values[0]
+            arrTime = time_values[-1]
 
 
      # DataFrame 처리 시작
@@ -278,6 +314,13 @@ async def convert_df_to_json(df: pd.DataFrame, column_aliases) -> str:
         day_patterns = [
             r'\d+일',  # '숫자+일'이 포함된 모든 경우
             r'(?i)day\d+',  # 'Day숫자', 'day숫자', 'DAY숫자' 등 대소문자 구분 없이
+            r'(?i)\d+day',  # '숫자Day', '숫자day', '숫자DAY' 등 대소문자 구분 없이
+            r'\d{2}-\d{2}\(\w+\)',  # mm-dd(요일)
+            r'\d{2}-\d{2}',  # mm-dd
+            r'\d{2}-\d{2}-\d{2}\(\w+\)',  # yy-mm-dd(요일)
+            r'\d{2}-\d{2}-\d{2}',  # yy-mm-dd
+            r'\d{2}/\d{2}',  # mm/dd
+            r'\d{2}/\d{2}/\d{2}',  # yy/mm/dd
         ]
         return any(re.search(pattern, text) for pattern in day_patterns)
 
@@ -384,7 +427,7 @@ async def convert_df_to_json(df: pd.DataFrame, column_aliases) -> str:
                 day_data['locations'].append(current_location)
         itinerary.append(day_data)
 
-    return itinerary, locations, places
+    return itinerary, locations, places, depTime, arrTime
 
 
 def convert_xls_to_xlsx(xls_contents):
@@ -432,16 +475,16 @@ async def convert_excel_to_html(excel_url: str):
 
         itn_df = await split_multiline_rows(itn_df)
         subData = {}
-        subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
-        subData['file_url'] = result['file_url']
-        final_html = json2html.generate_itinerary_html(subData)
+        # subData['itinerary'], locations, places , deptime, arrtime = await convert_df_to_json(itn_df, column_aliases)
+        # subData['file_url'] = result['file_url']
+        # final_html = itn2html.generate_itinerary_html(subData)
         
         # 헤더 데이터 처리
         headjson, head_html = create_html(head_df)
         
         # 일정 데이터 처리
-        subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
-        subData['file_url'] = result['file_url']
+        subData['itinerary'], locations, places , deptime, arrtime = await convert_df_to_json(itn_df, column_aliases)
+        # subData['file_url'] = result['file_url']
         
         # ItineraryHtmlGenerator를 사용하여 HTML 생성
         generator = ItineraryHtmlGenerator(subData)
@@ -453,6 +496,8 @@ async def convert_excel_to_html(excel_url: str):
         final_html = template.replace('{{content}}', head_html + itinerary_html)
         
         # 추가 정보 업데이트
+        subData['출발시간'] = deptime
+        subData['도착시간'] = arrtime
         subData['locations'] = ','.join(locations).replace(' ', '')
         subData['places'] = extract_sorted_unique_words(','.join(places))
         subData.update(headjson)
@@ -461,7 +506,7 @@ async def convert_excel_to_html(excel_url: str):
             'status': 'success',
             'html': final_html,
             'subData': subData,
-            'file_url': result['file_url'],
+            # 'file_url': result['file_url'],
         })
             
     except Exception as e:
@@ -514,8 +559,8 @@ async def convert_excel_to_html(
         headjson, head_html = create_html(head_df)
         
         # 일정 데이터 처리
-        subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
-        subData['file_url'] = result['file_url']
+        subData['itinerary'], locations, places , deptime, arrtime = await convert_df_to_json(itn_df, column_aliases)
+        # subData['file_url'] = result['file_url']
         
         # ItineraryHtmlGenerator를 사용하여 HTML 생성
         generator = ItineraryHtmlGenerator(subData)
@@ -527,6 +572,8 @@ async def convert_excel_to_html(
         final_html = template.replace('{{content}}', head_html + itinerary_html)
         
         # 추가 정보 업데이트
+        subData['출발시간'] = deptime
+        subData['도착시간'] = arrtime
         subData['locations'] = ','.join(locations).replace(' ', '')
         subData['places'] = extract_sorted_unique_words(','.join(places))
         subData.update(headjson)
@@ -543,6 +590,50 @@ async def convert_excel_to_html(
             content={'error': str(e)}, 
             status_code=400
         )
+
+# @app.post("/itinerary/df/", response_model=ProcessedResult)
+# async def convert_df_to_html(df_input: DataFrameInput):
+
+@app.post("/itinerary/df/")
+async def convert_df_to_html(data: TableData):
+    df = pd.DataFrame(data.tableData)
+    head_df, itn_df, column_aliases = await itn_search(df)
+    # head_df 에서는 출발월 을        1월||2월||3월
+    # itn_df 에서는 출도착 시간을     12:00||13:00 
+
+    itn_df = await split_multiline_rows(itn_df)
+    subData = {}
+    
+    # 헤더 데이터 처리
+    headjson, head_html = create_html(head_df)
+    
+    # 일정 데이터 처리
+    subData['itinerary'], locations, places , deptime, arrtime = await convert_df_to_json(itn_df, column_aliases)
+    # ItineraryHtmlGenerator를 사용하여 HTML 생성
+    generator = ItineraryHtmlGenerator(subData)
+    itinerary_html = generator.generate_html()  # 일정 HTML 생성 (상품명 제외)
+    
+    # 최종 HTML 생성
+    with open('./templates/template.html', 'r', encoding='utf-8') as f:
+        template = f.read()
+    final_html = template.replace('{{content}}', head_html + itinerary_html)
+    
+    # 추가 정보 업데이트
+    subData['locations'] = ','.join(locations).replace(' ', '')
+    subData['places'] = extract_sorted_unique_words(','.join(places))
+    subData['출발시간'] = deptime
+    subData['도착시간'] = arrtime
+    subData.update(headjson)
+    
+    return JSONResponse(content={
+        'status': 'success',
+        'html': final_html,
+        'subData': subData,
+        # 'file_url': result['file_url'],  # result가 정의된 경우에만 사용
+    })
+    
+        
+        
 
 @app.post("/itinerary/send-email")
 async def send_email(email_request: EmailRequest):
@@ -618,4 +709,4 @@ async def file_upload(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=9001)
+    uvicorn.run(app, host="0.0.0.0", port=9000)

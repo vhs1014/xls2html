@@ -29,7 +29,7 @@ from extract_words import extract_sorted_unique_words
 import datetime
 import unicodedata
 
-import json2html
+# import itn2html
 
 
 app = FastAPI()
@@ -114,11 +114,11 @@ async def  split_multiline_rows(df: pd.DataFrame) -> pd.DataFrame:
 async def itn_search(df: pd.DataFrame) -> pd.DataFrame:
     # 컬럼 매핑 정의
     column_aliases = {
-        'date': ['일자', '날짜', '순번', '일시', 'Date', 'Day', 'No', '월/일', '일차'],
-        'place': ['지역', '장소', 'place', 'city', '도시', '여행지', '행선지'],
-        'transport': ['교통편', '이동수단', '교통', 'Trans', 'Transport'],
+        'date': ['일자', '날짜', '순번', '일시', 'Date', 'Day', 'No', '월/일', '일차' ],
+        'place': ['지역', '장소', 'place', 'city', '도시', '여행지', '행선지', '방문도시', '방문장소'],
+        'transport': ['교통편', '이동수단', '교통', 'Trans', 'Transport', '구분'],
         'time': ['시간', 'time'],
-        'itinerary': ['주요일정', '일정', '관광지', 'itinerary', '여정'],
+        'itinerary': ['주요일정', '일정', '관광지', 'itinerary', '여정', '세부내용', '세부일정', '주요내용', '주요관광지'],
         'meal': ['식사', 'meal', 'meals']
     }
     
@@ -284,7 +284,8 @@ async def convert_df_to_json(df: pd.DataFrame, column_aliases) -> str:
     current_flight = None
     for idx, row in df.iterrows():
         # 일자 처리
-        if date_col == 0 and pd.notna(row[date_col]) and is_day_header(str(row[date_col])):
+        # if date_col == 0 and pd.notna(row[date_col]) and is_day_header(str(row[date_col])):   # 날짜 형식인지 체크하고 진행
+        if date_col == 0 and pd.notna(row[date_col]) :     # 날짜 형식인지 체크 안하고 진행
             # 이전 day_data가 있으면 현재 location을 추가하고 itinerary에 추가
             if day_data is not None and current_location is not None:
                 if current_location["schedule"]:  # schedule이 있는 경우만 추가
@@ -434,7 +435,7 @@ async def convert_excel_to_html(excel_url: str):
         subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
         
         subData['file_url'] = excel_url
-        final_html = json2html.generate_itinerary_html(subData)
+        final_html = itn2html.generate_itinerary_html(subData)
         
 
         # html 생성후 추가 정보 추가
@@ -495,7 +496,7 @@ async def convert_excel_to_html(
         subData =  create_html(head_df)
         subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
         subData['file_url'] = result['file_url']
-        final_html = json2html.generate_itinerary_html(subData)
+        final_html = itn2html.generate_itinerary_html(subData)
         
         # html 생성후 추가 정보 추가
         subData['locations'] = ','.join(locations).replace(' ', '')
@@ -589,4 +590,4 @@ async def file_upload(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=9001)
+    uvicorn.run(app, host="0.0.0.0", port=9000 )

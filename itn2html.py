@@ -18,7 +18,7 @@ def generate_itinerary_html(data: dict, head_html: str = '') -> str:
 class ItineraryHtmlGenerator:
     def __init__(self, data):
         self.data = data
-        self.exclude_fields = {'locations', 'places', 'itinerary'}
+        self.exclude_fields = {'locations', 'places', 'itinerary', '출발월'}
         
     def generate_html(self, head_html: str = '') -> str:
         sections = []
@@ -74,13 +74,16 @@ class ItineraryHtmlGenerator:
                              for item in location_data.get('schedule', [])) else "place"
         
         schedule_html = []
+        # if 'schedule' in location_data:
+        #     schedule_html.append('<table class="schedule-table">')
+        #     schedule_html.append('<tbody>')
+        #     schedule_html.append(self._process_schedule(location_data['schedule']))
+        #     schedule_html.append('</tbody>')
+        #     schedule_html.append('</table>')
         if 'schedule' in location_data:
-            schedule_html.append('<table class="schedule-table">')
-            schedule_html.append('<tbody>')
+            schedule_html.append('<sapn>')
             schedule_html.append(self._process_schedule(location_data['schedule']))
-            schedule_html.append('</tbody>')
-            schedule_html.append('</table>')
-        
+            schedule_html.append('<span>')
         return f'''
         <div class="schedule-item">
             <span class="icon">

@@ -92,7 +92,7 @@ def generate_itinerary_html(json_data):
                 '기본': 'label_important'
             }
             
-            self.exclude_fields = {'locations', 'places', 'itinerary'}
+            self.exclude_fields = {'locations', 'places', 'itinerary', '출발월'}
 
         def _get_display_order(self):
             """JSON의 원래 키 순서를 완벽하게 유지하면서 일부 필드만 우선순위 부여"""

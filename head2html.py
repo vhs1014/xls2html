@@ -18,6 +18,17 @@ def head2json(df: pd.DataFrame) -> Dict:
     result = {}
     product_name_found = False
     
+    # 월 추출을 위한 패턴
+    month_pattern = r'(\d+월)'
+    
+    # DataFrame을 문자열로 변환하고 한 번에 월 찾기
+    df_str = df.to_string(index=False, na_rep='')
+    months = set(re.findall(month_pattern, df_str))
+    
+    # 찾은 월들을 정렬하고 문자열로 변환 (숫자 부분으로 정렬)
+    if months:
+        result['출발월'] = ','.join(sorted(months, key=lambda x: int(x.rstrip('월'))))
+    
     # 상품명 찾기 - 첫 번째로 나오는 한 줄에 한 칸만 값이 있는 데이터
     for i in range(df.shape[0]):
         row = df.iloc[i]
@@ -60,50 +71,39 @@ def json2html(data: Dict) -> str:
     
     # 각 행 처리
     for key in sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else 0):
-        if key != '상품명':  # 상품명은 처리하지 않음
+        if key != '상품명' and key != '출발월':  # 상품명은 처리하지 않음
             cells = data[key].split('||')
-            non_empty_cells = [cell for cell in cells if cell.strip()]
             
-            # 한 줄에 한 칸만 있는 경우
-            if len(non_empty_cells) == 1:
-                # 값이 있는 셀의 위치 찾기
-                value_index = next(i for i, cell in enumerate(cells) if cell.strip())
+            # 첫 번째 셀이 비어있는지 확인하여 클래스 추가
+            is_first_empty = not cells[0].strip()
+            tr_class = ' class="empty-first"' if is_first_empty else ''
+            html_parts.append(f'<tr{tr_class}>')
+            
+            i = 0
+            while i < len(cells):
+                # 현재 셀이 비어있고 첫 번째 셀이 아니면 건너뛰기
+                if i > 0 and not cells[i].strip():
+                    i += 1
+                    continue
                 
-                html_parts.append('<tr class="single-cell-row">')
-                # 값이 있는 셀 이전의 빈 셀들
-                for _ in range(value_index):
-                    html_parts.append('<td></td>')
-                # 값이 있는 셀과 나머지 빈 셀들을 colspan으로 처리
-                remaining_cells = len(cells) - value_index
-                if remaining_cells > 1:
-                    html_parts.append(f'<td colspan="{remaining_cells}">{non_empty_cells[0]}</td>')
-                else:
-                    html_parts.append(f'<td>{non_empty_cells[0]}</td>')
-                html_parts.append('</tr>')
-            else:
-                html_parts.append('<tr>')
-                i = 0
-                while i < len(cells):
-                    if not cells[i].strip():
-                        # 빈 셀은 그대로 출력
-                        html_parts.append('<td></td>')
-                        i += 1
-                    else:
-                        # 현재 셀에 값이 있는 경우, 오른쪽의 빈 셀만 확인
-                        colspan = 1
-                        next_pos = i + 1
-                        while next_pos < len(cells) and not cells[next_pos].strip():
-                            colspan += 1
-                            next_pos += 1
-                        
-                        if colspan > 1:
-                            html_parts.append(f'<td colspan="{colspan}">{cells[i]}</td>')
-                            i = next_pos
-                        else:
-                            html_parts.append(f'<td>{cells[i]}</td>')
-                            i += 1
-                html_parts.append('</tr>')
-    
+                # 현재 셀 다음부터 연속된 빈 셀 개수 세기
+                empty_count = 0
+                next_pos = i + 1
+                while next_pos < len(cells) and not cells[next_pos].strip():
+                    empty_count += 1
+                    next_pos += 1
+
+                # 첫 번째 셀은 특별한 스타일 적용
+                if i == 0:
+                    html_parts.append(f'<td class="first-cell"' + (f' colspan="{empty_count + 1}"' if empty_count > 0 else '') + f'>{cells[i]}</td>')
+                else:  # 값이 있는 셀
+                    html_parts.append(f'<td class="data-cell"' + (f' colspan="{empty_count + 1}"' if empty_count > 0 else '') + f'>{cells[i]}</td>')
+                
+                # 다음 위치로 이동 (빈 셀은 건너뛰기)
+                i = next_pos if empty_count > 0 else i + 1
+                    
+            html_parts.append('</tr>')
+
     html_parts.append('</tbody>')
     html_parts.append('</table>')
     html_parts.append('</div>')
@@ -123,40 +123,70 @@ def json2html(data: Dict) -> str:
             font-size: 14px;
         }
         
-        /* 첫 번째 셀 기본 스타일 */
-        .info-table td:first-child {
+        /* 첫 번째 셀 스타일 */
+        .info-table td.first-cell {
             background-color: #f8f9fa;
             font-weight: 700;
         }
         
-        /* colspan이 있는 첫번째 셀 스타일 */
-        .info-table td:first-child[colspan] {
-            background-color: transparent;
-            font-weight: 400;
+        /* 데이터 셀 스타일 (첫 번째 셀 제외) */
+        .info-table td.data-cell {
+            border-left: 1px solid #ccc;
         }
-
+        
         /* 행 테두리 기본 스타일 */
         .info-table tr {
             border-top: 1px solid #ccc;
         }
 
-        /* 첫 번째 셀이 비어있는 행의 모든 테두리 제거 */
-        .info-table tr:has(td:first-child:empty) {
+        /* 첫 번째 셀이 비어있는 행의 상단 테두리 제거 */
+        .info-table tr.empty-first {
             border-top: none;
-            border-bottom: none;
         }
-
-        /* single-cell-row가 연속될 때의 테두리 처리 */
-        .info-table tr.single-cell-row:has(+ tr.single-cell-row),
-        .info-table tr.single-cell-row + tr.single-cell-row {
-            border-top: none;
-            border-bottom: none;
-        }
-
 
         /* 테이블의 마지막 행은 항상 하단 테두리 표시 */
         .info-table tr:last-child {
             border-bottom: 1px solid #ccc !important;
+        }
+
+        /* 모바일 스타일 */
+        @media screen and (max-width: 768px) {
+            /* info-section 패딩과 배경색 제거 */
+            .info-section {
+                padding: 0 !important;
+                background-color: transparent !important;
+            }
+
+            /* title-section 마진 제거 */
+            .title-section {
+                margin: 0 !important;
+            }
+
+            /* 테이블 스타일 */
+            .info-table, .info-table tbody {
+                display: block;
+                width: 100%;
+            }
+
+            /* tbody 패딩 제거 */
+            .info-table tbody {
+                padding: 0 !important;
+            }
+            
+            /* 모든 행을 블록으로 표시 */
+            .info-table tr {
+                display: flex;
+                flex-direction: column;
+                margin-bottom: 16px;
+                border: none;
+            }
+            
+            /* 모든 셀을 블록으로 표시 */
+            .info-table td {
+                display: block;
+                width: 100%;
+                box-sizing: border-box;
+            }
         }
     </style>
     ''')

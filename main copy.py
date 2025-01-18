@@ -29,21 +29,33 @@ from extract_words import extract_sorted_unique_words
 import datetime
 import unicodedata
 
-import json2html
-
+import itn2html
+from itn2html import ItineraryHtmlGenerator
+from typing import List, Dict
 
 app = FastAPI()
 
-# CORS 미들웨어 설정 추가
+# CORS 미들웨어 추가
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 모든 origin 허용. 프로덕션에서는 특정 도메인만 지정하는 것이 좋습니다
+    allow_origins=["*"],  # 실제 운영환경에서는 구체적인 도메인을 지정하는 것이 좋습니다
     allow_credentials=True,
-    allow_methods=["*"],  # 모든 HTTP 메서드 허용
-    allow_headers=["*"],  # 모든 HTTP 헤더 허용
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
- 
+# class DataFrameInput(BaseModel):
+#     # DataFrame을 JSON 형식으로 받기 위한 Pydantic 모델
+#     columns: List[str]
+#     data: List[List]
+
+# class ProcessedResult(BaseModel):
+#     # 처리된 결과를 반환하기 위한 Pydantic 모델
+#     summary: Dict
+#     processed_data: List[Dict]
+class TableData(BaseModel):
+    tableData: List[List[str]]
+     
 uploader = S3FileUploader()
 # 정적 파일 경로를 /itinerary/static으로 설정
 app.mount("/itinerary/static", StaticFiles(directory="static"), name="static")
@@ -118,7 +130,7 @@ async def itn_search(df: pd.DataFrame) -> pd.DataFrame:
         'place': ['지역', '장소', 'place', 'city', '도시', '여행지', '행선지'],
         'transport': ['교통편', '이동수단', '교통', 'Trans', 'Transport'],
         'time': ['시간', 'time'],
-        'itinerary': ['주요일정', '일정', '관광지', 'itinerary', '여정'],
+        'itinerary': ['주요일정', '일정', '행사일정', '관광지', 'itinerary', '예정일정', '여정'],
         'meal': ['식사', 'meal', 'meals']
     }
     
@@ -146,15 +158,25 @@ async def itn_search(df: pd.DataFrame) -> pd.DataFrame:
     head_df = df.iloc[:idy]  # 헤더 부분
     itn_df = df.iloc[idy:]   # 일정 부분
     
+    # head_df 처리
+    head_df = head_df.loc[:, (head_df != '').any()]  # 모든 값이 빈 문자열인 열 제거
+    head_df = head_df.loc[(head_df != '').any(axis=1)]  # 모든 값이 빈 문자열인 행 제거
+
+    # itn_df 처리
+    itn_df = itn_df.loc[:, (itn_df != '').any()]     # 모든 값이 빈 문자열인 열 제거
+    itn_df = itn_df.loc[(itn_df != '').any(axis=1)]  # 모든 값이 빈 문자열인 행 제거
+
     # head, itn 각각 빈줄, 빈칸 제거
     head_df = head_df.dropna(axis=1, how='all')   
-    head_df.columns = range(len(head_df.columns))  
     head_df = head_df.dropna(axis=0, how='all') 
     
     itn_df = itn_df.dropna(axis=1, how='all')   
-    itn_df.columns = range(len(itn_df.columns))  
     itn_df = itn_df.dropna(axis=0, how='all')
-    
+
+
+    head_df.columns = range(len(head_df.columns))  
+    itn_df.columns = range(len(itn_df.columns))      
+
     return head_df, itn_df, column_aliases
     
 async def read_excel_from_upload(file: UploadFile) -> pd.DataFrame:
@@ -277,6 +299,7 @@ async def convert_df_to_json(df: pd.DataFrame, column_aliases) -> str:
         day_patterns = [
             r'\d+일',  # '숫자+일'이 포함된 모든 경우
             r'(?i)day\d+',  # 'Day숫자', 'day숫자', 'DAY숫자' 등 대소문자 구분 없이
+            r'(?i)\d+day',  # '숫자Day', '숫자day', '숫자DAY' 등 대소문자 구분 없이
         ]
         return any(re.search(pattern, text) for pattern in day_patterns)
 
@@ -386,158 +409,6 @@ async def convert_df_to_json(df: pd.DataFrame, column_aliases) -> str:
     return itinerary, locations, places
 
 
-
-@app.get("/itinerary/health")
-async def health():
-    return 'ok'
-
-# =====================================================================================
-# 엑셀 파일 업로드 및 S3 저장
-# =====================================================================================
-
-@app.get("/itinerary/url/")
-async def convert_excel_to_html(excel_url: str):
-    try:
-        # URL에서 직접 DataFrame으로 읽기
-        head_df, itn_df ,column_aliases = await read_excel_from_url(excel_url)
-
-        itn_df = await split_multiline_rows(itn_df)
-        subData =  create_html(head_df)
-        subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
-        
-        subData['file_url'] = excel_url
-        final_html = json2html.generate_itinerary_html(subData)
-        
-
-        # html 생성후 추가 정보 추가
-        subData['locations'] = ','.join(locations)
-        subData['places'] = extract_sorted_unique_words(','.join(places))
-
-        result = {
-            'html': final_html,
-            'subData': subData,
-            'file_url': excel_url
-        }
-        return JSONResponse(content=result , status_code=200)
-        # return HTMLResponse(content=final_html, status_code=200)
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"변환 실패: {str(e)}")
-
-@app.get("/itinerary/s3select/")
-async def read_root():
-    """업로드 폼을 보여주는 HTML 페이지 반환"""
-    try:
-        html_content = (TEMPLATES_DIR / "s3upload.html").read_text(encoding="utf-8")
-        return HTMLResponse(content=html_content)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"HTML 파일 로드 실패: {str(e)}")
-
-
-#  itn_id 가 있으면 기존 일정표 수정, 없으면 새로운 일정표 생성
-@app.post("/itinerary/saveupload/")
-async def convert_excel_to_html(
-    file: UploadFile = File(...),
-    user_id: Optional[int] = None,
-    itn_id: Optional[int] = None,
-    file_url: Optional[str] = None
-):
-    # try:
-        # 초기 result 변수 선언
-        if not file.filename.endswith(('.xlsx', '.xls')):
-            raise HTTPException(status_code=400, detail="엑셀 파일만 업로드 가능합니다.")
-        
-        
-        if file.filename.endswith(('.xlsx', '.xls')):
-            # 엑셀 파일 처리
-            head_df, itn_df ,column_aliases= await read_excel_from_upload(file)
-        try:
-            if itn_id and file_url:
-                result = uploader.update_file(file.file, file.filename, file_url)
-            else:
-                result = uploader.upload_file(file.file, file.filename)
-                
-            if not result:
-                raise Exception("파일 업로드/업데이트 실패")
-                
-        except Exception as e:
-            raise Exception(f"파일 처리 실패: {str(e)}")
-        
-        itn_df = await split_multiline_rows(itn_df)
-        subData =  create_html(head_df)
-        subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
-        subData['file_url'] = result['file_url']
-        final_html = json2html.generate_itinerary_html(subData)
-        
-        # html 생성후 추가 정보 추가
-        subData['locations'] = ','.join(locations).replace(' ', '')
-        subData['places'] = extract_sorted_unique_words(','.join(places))
-        
-        # JSON 2 html 
-        return JSONResponse(content={
-            'status': 'success',
-            'html': final_html,
-            'subData': subData,
-            'file_url': result['file_url'],
-        })
-            
-    # except Exception as e:
-    #     return JSONResponse(
-    #         content={'error': str(e)}, 
-    #         status_code=400
-    #     )
-
-
-#  itn_id 가 있으면 기존 일정표 수정, 없으면 새로운 일정표 생성
-
-@app.post("/itinerary/fileupload/")
-async def file_upload(
-    file: UploadFile = File(...),
-    file_url: Optional[str] = None
-):
-        try:
-            if  file_url:
-                result = uploader.update_file(file.file, file.filename, file_url)
-            else:
-                result = uploader.upload_file(file.file, file.filename)
-                
-            if not result:
-                raise Exception("파일 업로드/업데이트 실패")
-                
-        except Exception as e:
-            raise Exception(f"파일 처리 실패: {str(e)}")
-        
-        
-        # JSON 2 html 
-        return JSONResponse(content={
-            'status': 'success',
-            'file_url': result['file_url'],
-        })
-
-
-@app.post("/itinerary/send-email")
-async def send_email(email_request: EmailRequest):
-    if len(email_request.recipients) > 5:
-        raise HTTPException(status_code=400, detail="Maximum 5 recipients allowed")
-    
-    try:
-        msg = MIMEMultipart('alternative')
-        msg['From'] = SMTP_USERNAME
-        msg['To'] = ', '.join(email_request.recipients)
-        msg['Subject'] = email_request.subject
-        
-        # HTML 형식으로 이메일 본문 추가
-        msg.attach(MIMEText(email_request.body, 'html'))
-        
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.send_message(msg)
-            
-        return {"message": "Email sent successfully"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
-
-
 def convert_xls_to_xlsx(xls_contents):
     """xls 파일을 xlsx로 변환"""
     # 임시 파일 생성
@@ -566,6 +437,248 @@ def convert_xls_to_xlsx(xls_contents):
         if os.path.exists(temp_xlsx_path):
             os.unlink(temp_xlsx_path)
         raise e
+
+@app.get("/itinerary/health")
+async def health():
+    return 'ok'
+
+# =====================================================================================
+# 엑셀 파일 업로드 및 S3 저장
+# =====================================================================================
+
+@app.get("/itinerary/url/")
+async def convert_excel_to_html(excel_url: str):
+    try:
+        # URL에서 직접 DataFrame으로 읽기
+        head_df, itn_df ,column_aliases = await read_excel_from_url(excel_url)
+
+        itn_df = await split_multiline_rows(itn_df)
+        subData = {}
+        subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
+        subData['file_url'] = result['file_url']
+        final_html = itn2html.generate_itinerary_html(subData)
+        
+        # 헤더 데이터 처리
+        headjson, head_html = create_html(head_df)
+        
+        # 일정 데이터 처리
+        subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
+        subData['file_url'] = result['file_url']
+        
+        # ItineraryHtmlGenerator를 사용하여 HTML 생성
+        generator = ItineraryHtmlGenerator(subData)
+        itinerary_html = generator.generate_html()  # 일정 HTML 생성 (상품명 제외)
+        
+        # 최종 HTML 생성
+        with open('./templates/template.html', 'r', encoding='utf-8') as f:
+            template = f.read()
+        final_html = template.replace('{{content}}', head_html + itinerary_html)
+        
+        # 추가 정보 업데이트
+        subData['locations'] = ','.join(locations).replace(' ', '')
+        subData['places'] = extract_sorted_unique_words(','.join(places))
+        subData.update(headjson)
+        
+        return JSONResponse(content={
+            'status': 'success',
+            'html': final_html,
+            'subData': subData,
+            'file_url': result['file_url'],
+        })
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"변환 실패: {str(e)}")
+
+@app.get("/itinerary/s3select/")
+async def read_root():
+    """업로드 폼을 보여주는 HTML 페이지 반환"""
+    try:
+        html_content = (TEMPLATES_DIR / "s3upload.html").read_text(encoding="utf-8")
+        return HTMLResponse(content=html_content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"HTML 파일 로드 실패: {str(e)}")
+
+
+#  itn_id 가 있으면 기존 일정표 수정, 없으면 새로운 일정표 생성
+@app.post("/itinerary/saveupload/")
+async def convert_excel_to_html(
+    file: UploadFile = File(...),
+    user_id: Optional[int] = None,
+    itn_id: Optional[int] = None,
+    file_url: Optional[str] = None
+):
+    try:
+        # 초기 검증
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            raise HTTPException(status_code=400, detail="엑셀 파일만 업로드 가능합니다.")
+        
+        # 엑셀 파일 처리
+        head_df, itn_df, column_aliases = await read_excel_from_upload(file)
+        
+        # 파일 업로드 처리
+        try:
+            if itn_id and file_url:
+                result = uploader.update_file(file.file, file.filename, file_url)
+            else:
+                result = uploader.upload_file(file.file, file.filename)
+                
+            if not result:
+                raise Exception("파일 업로드/업데이트 실패")
+                
+        except Exception as e:
+            raise Exception(f"파일 처리 실패: {str(e)}")
+        
+        # 데이터 처리
+        itn_df = await split_multiline_rows(itn_df)
+        subData = {}
+        
+        # 헤더 데이터 처리
+        headjson, head_html = create_html(head_df)
+        
+        # 일정 데이터 처리
+        subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
+        subData['file_url'] = result['file_url']
+        
+        # ItineraryHtmlGenerator를 사용하여 HTML 생성
+        generator = ItineraryHtmlGenerator(subData)
+        itinerary_html = generator.generate_html()  # 일정 HTML 생성 (상품명 제외)
+        
+        # 최종 HTML 생성
+        with open('./templates/template.html', 'r', encoding='utf-8') as f:
+            template = f.read()
+        final_html = template.replace('{{content}}', head_html + itinerary_html)
+        
+        # 추가 정보 업데이트
+        subData['locations'] = ','.join(locations).replace(' ', '')
+        subData['places'] = extract_sorted_unique_words(','.join(places))
+        subData.update(headjson)
+        
+        return JSONResponse(content={
+            'status': 'success',
+            'html': final_html,
+            'subData': subData,
+            'file_url': result['file_url'],
+        })
+            
+    except Exception as e:
+        return JSONResponse(
+            content={'error': str(e)}, 
+            status_code=400
+        )
+
+# @app.post("/itinerary/df/", response_model=ProcessedResult)
+# async def convert_df_to_html(df_input: DataFrameInput):
+
+@app.post("/itinerary/df/")
+async def convert_df_to_html(data: TableData):
+    df = pd.DataFrame(data.tableData)
+    head_df, itn_df, column_aliases = await itn_search(df)
+    # head_df 에서는 출발월 을        1월||2월||3월
+    # itn_df 에서는 출도착 시간을     12:00||13:00 
+
+    itn_df = await split_multiline_rows(itn_df)
+    subData = {}
+    
+    # 헤더 데이터 처리
+    headjson, head_html = create_html(head_df)
+    
+    # 일정 데이터 처리
+    subData['itinerary'], locations, places , deptime, arrtime = await convert_df_to_json(itn_df, column_aliases)
+    # ItineraryHtmlGenerator를 사용하여 HTML 생성
+    generator = ItineraryHtmlGenerator(subData)
+    itinerary_html = generator.generate_html()  # 일정 HTML 생성 (상품명 제외)
+    
+    # 최종 HTML 생성
+    with open('./templates/template.html', 'r', encoding='utf-8') as f:
+        template = f.read()
+    final_html = template.replace('{{content}}', head_html + itinerary_html)
+    
+    # 추가 정보 업데이트
+    subData['locations'] = ','.join(locations).replace(' ', '')
+    subData['places'] = extract_sorted_unique_words(','.join(places))
+    subData.update(headjson)
+    
+    return JSONResponse(content={
+        'status': 'success',
+        'html': final_html,
+        'subData': subData,
+        # 'file_url': result['file_url'],  # result가 정의된 경우에만 사용
+    })
+    
+        
+        
+
+@app.post("/itinerary/send-email")
+async def send_email(email_request: EmailRequest):
+    if len(email_request.recipients) > 5:
+        raise HTTPException(status_code=400, detail="Maximum 5 recipients allowed")
+    
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['From'] = SMTP_USERNAME
+        msg['To'] = ', '.join(email_request.recipients)
+        msg['Subject'] = email_request.subject
+        
+        # HTML 형식으로 이메일 본문 추가
+        msg.attach(MIMEText(email_request.body, 'html'))
+        
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.send_message(msg)
+            
+        return {"message": "Email sent successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+
+#  itn_id 가 있으면 기존 일정표 수정, 없으면 새로운 일정표 생성
+@app.post("/itinerary/fileupload/")
+async def file_upload(
+    file: UploadFile = File(...),
+    file_url: Optional[str] = None
+):
+        try:
+            if  file_url:
+                result = uploader.update_file(file.file, file.filename, file_url)
+            else:
+                result = uploader.upload_file(file.file, file.filename)
+                
+            if not result:
+                raise Exception("파일 업로드/업데이트 실패")
+                
+        except Exception as e:
+            raise Exception(f"파일 처리 실패: {str(e)}")
+        
+        
+        # JSON 2 html 
+        return JSONResponse(content={
+            'status': 'success',
+            'file_url': result['file_url'],
+        })
+
+#  itn_id 가 있으면 기존 일정표 수정, 없으면 새로운 일정표 생성
+@app.post("/itinerary/counseling_fileupload/")
+async def file_upload(
+    file: UploadFile = File(...),
+    companyNo: str = ''
+):
+        try:
+            result = uploader.file_upload( file.file, file.filename, int(companyNo))
+            if not result:
+                raise Exception("파일 업로드/업데이트 실패")
+                
+        except Exception as e:
+            raise Exception(f"파일 처리 실패: {str(e)}")
+        
+        
+        # JSON 2 html 
+        return JSONResponse(content={
+            'status': 'success',
+            'file_url': result['file_url'],
+        })
+
+
+
 
 if __name__ == "__main__":
     import uvicorn

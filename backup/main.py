@@ -29,7 +29,7 @@ from extract_words import extract_sorted_unique_words
 import datetime
 import unicodedata
 
-import json2html
+import itn2html
 
 
 app = FastAPI()
@@ -434,7 +434,7 @@ async def convert_excel_to_html(excel_url: str):
         subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
         
         subData['file_url'] = excel_url
-        final_html = json2html.generate_itinerary_html(subData)
+        final_html = itn2html.generate_itinerary_html(subData)
         
 
         # html 생성후 추가 정보 추가
@@ -495,7 +495,7 @@ async def convert_excel_to_html(
         subData =  create_html(head_df)
         subData['itinerary'], locations, places = await convert_df_to_json(itn_df, column_aliases)
         subData['file_url'] = result['file_url']
-        final_html = json2html.generate_itinerary_html(subData)
+        final_html = itn2html.generate_itinerary_html(subData)
         
         # html 생성후 추가 정보 추가
         subData['locations'] = ','.join(locations).replace(' ', '')
