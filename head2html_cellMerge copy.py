@@ -1,9 +1,10 @@
-## 이전버전을 위해 페이지 유지.. (DF  api 사용)
+# 신규 rowspan 처리 관련 페이지   이후 안정화 되면 head2html.py 로 이동..
 
 import pandas as pd
 import numpy as np
 import re
 from typing import Tuple, Dict
+from bs4 import BeautifulSoup
 
 def format_cell(x):
     if pd.notna(x):
@@ -62,58 +63,121 @@ def head2json(df: pd.DataFrame) -> Dict:
     
     return result
 
-def json2html(data: Dict) -> str:
+def json2html(data: Dict, spanData: list) -> str:
     """JSON 데이터를 HTML로 변환"""
-    html_parts = []
+    from bs4 import BeautifulSoup
     
-    # 테이블 컨테이너 시작 (상품명 섹션 제거)
-    html_parts.append('<div class="info-section">')
-    html_parts.append('<table class="info-table">')
-    html_parts.append('<tbody>')
+    # 기본 HTML 구조 생성
+    html = '<div class="info-section"><table class="info-table"><tbody></tbody></table></div>'
+    soup = BeautifulSoup(html, 'html.parser')
+    tbody = soup.find('tbody')
     
-    # 각 행 처리
+    # 1단계: 기본 테이블 생성 (colspan, rowspan 없는 상태)
+    table_map = []  # 셀의 원래 위치를 저장할 2차원 배열
+    row_index = 0
+    
     for key in sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else 0):
-        # if key != '상품명' and key != '출발월':  # 상품명은 처리하지 않음
-        if  key != '출발월':  # 상품명은 처리하지 않음
+        if key != '출발월':
             cells = data[key].split('||')
+            tr = soup.new_tag('tr')
+            tbody.append(tr)
             
-            # 첫 번째 셀이 비어있는지 확인하여 클래스 추가
-            is_first_empty = not cells[0].strip()
-            tr_class = ' class="empty-first"' if is_first_empty else ''
-            html_parts.append(f'<tr{tr_class}>')
+            # 현재 행의 위치 맵핑 배열 생성
+            current_row_map = []
+            table_map.append(current_row_map)
             
-            i = 0
-            while i < len(cells):
-                # 현재 셀이 비어있고 첫 번째 셀이 아니면 건너뛰기
-                if i > 0 and not cells[i].strip():
-                    i += 1
-                    continue
+            # 모든 셀 생성
+            for col_idx, cell_content in enumerate(cells):
+                td = soup.new_tag('td')
+                td['class'] = 'first-cell' if col_idx == 0 else 'data-cell'
                 
-                # 현재 셀 다음부터 연속된 빈 셀 개수 세기
-                empty_count = 0
-                next_pos = i + 1
-                while next_pos < len(cells) and not cells[next_pos].strip():
-                    empty_count += 1
-                    next_pos += 1
-
-                # 첫 번째 셀은 특별한 스타일 적용
-                if i == 0:
-                    html_parts.append(f'<td class="first-cell"' + (f' colspan="{empty_count + 1}"' if empty_count > 0 else '') + f'>{cells[i]}</td>')
-                else:  # 값이 있는 셀
-                    html_parts.append(f'<td class="data-cell"' + (f' colspan="{empty_count + 1}"' if empty_count > 0 else '') + f'>{cells[i]}</td>')
+                # HTML 태그가 포함된 경우에만 BeautifulSoup 사용
+                if '<' in str(cell_content) and '>' in str(cell_content):
+                    parsed_content = BeautifulSoup(str(cell_content), 'html.parser').decode_contents()
+                    td.append(BeautifulSoup(parsed_content, 'html.parser'))
+                else:
+                    td.string = str(cell_content)
                 
-                # 다음 위치로 이동 (빈 셀은 건너뛰기)
-                i = next_pos if empty_count > 0 else i + 1
-                    
-            html_parts.append('</tr>')
-
-    html_parts.append('</tbody>')
-    html_parts.append('</table>')
-    html_parts.append('</div>')
+                tr.append(td)
+                current_row_map.append((row_index, col_idx))
+            
+            row_index += 1
+    
+    # 2단계: spanData를 기반으로 셀 병합 처리
+    rows = tbody.find_all('tr')
+    
+    for row_idx, row_spans in enumerate(spanData):
+        for col_idx, (colspan, rowspan) in enumerate(row_spans):
+            if colspan == 1 and rowspan == 1:
+                continue
+                
+            # 실제 위치 찾기
+            actual_row, actual_col = find_actual_position(table_map, row_idx, col_idx)
+            if actual_row is None or actual_col is None:
+                continue
+            
+            # 현재 셀 가져오기
+            current_row = rows[actual_row]
+            current_cells = current_row.find_all('td')
+            if actual_col >= len(current_cells):
+                continue
+            
+            current_cell = current_cells[actual_col]
+            cells_to_remove = []
+            
+            # span 값 적용
+            if colspan > 1:
+                current_cell['colspan'] = colspan
+            if rowspan > 1:
+                current_cell['rowspan'] = rowspan
+            
+            # rowspan 범위 내의 모든 행에서 셀 삭제 처리
+            for r in range(actual_row, min(actual_row + rowspan, len(rows))):
+                target_row = rows[r]
+                target_cells = target_row.find_all('td')
+                
+                # 첫 번째 행이 아닌 경우에만 첫 번째 셀 삭제 대상에 추가
+                if r > actual_row and actual_col < len(target_cells):
+                    cells_to_remove.append(target_cells[actual_col])
+                
+                # colspan에 해당하는 우측 셀들 삭제 대상에 추가
+                if colspan > 1:
+                    for c in range(actual_col + 1, min(actual_col + colspan, len(target_cells))):
+                        cells_to_remove.append(target_cells[c])
+            
+            # 수집된 셀들 삭제
+            for cell in cells_to_remove:
+                cell.decompose()
+    
+    # 각 행의 오른쪽 빈 셀들 병합 처리
+    rows = tbody.find_all('tr')
+    for row in rows:
+        cells = row.find_all('td')
+        if not cells:  # 셀이 없는 행은 건너뛰기
+            continue
+            
+        # 오른쪽에서부터 빈 셀 찾기
+        last_non_empty_idx = len(cells) - 1
+        while last_non_empty_idx >= 0:
+            cell_content = cells[last_non_empty_idx].get_text().strip()
+            if cell_content:  # 내용이 있는 셀을 찾으면 중단
+                break
+            last_non_empty_idx -= 1
+            
+        # 내용이 있는 셀의 다음 셀부터 마지막 셀까지 병합
+        if last_non_empty_idx >= 0 and last_non_empty_idx < len(cells) - 1:
+            target_cell = cells[last_non_empty_idx]
+            current_colspan = int(target_cell.get('colspan', 1))
+            new_colspan = current_colspan + (len(cells) - 1 - last_non_empty_idx)
+            target_cell['colspan'] = new_colspan
+            
+            # 병합될 셀들 삭제
+            for i in range(last_non_empty_idx + 1, len(cells)):
+                cells[i].decompose()
     
     # 스타일 추가
-    html_parts.insert(0, '''
-    <style>
+    style = soup.new_tag('style')
+    style.string = '''
         /* 기본 테이블 스타일 */
         .info-table {
             width: 100%;
@@ -191,17 +255,24 @@ def json2html(data: Dict) -> str:
                 box-sizing: border-box;
             }
         }
-    </style>
-    ''')
+    '''
+    soup.insert(0, style)
     
-    return '\n'.join(html_parts)
+    return str(soup)
 
-def create_html(df: pd.DataFrame) -> Tuple[Dict, str]:
+def find_actual_position(table, merged_row, merged_col):
+    for row in range(len(table)):
+        for col in range(len(table[row])):
+            if table[row][col] == (merged_row, merged_col):
+                return row, col
+    return None, None
+
+def create_html_merge(df: pd.DataFrame, spanData: dict = None) -> Tuple[Dict, str]:
     """엑셀 데이터를 HTML로 변환하는 메인 함수"""
     # 엑셀 데이터를 JSON으로 변환
     json_data = head2json(df)
     
-    # 상품명 섹션 HTML 생성
+    # # 상품명 섹션 HTML 생성
     # title_html = ''
     # if '상품명' in json_data:
     #     title_html = f'''
@@ -211,7 +282,7 @@ def create_html(df: pd.DataFrame) -> Tuple[Dict, str]:
     #     '''
     
     # JSON을 HTML로 변환 (테이블 부분)
-    table_html = json2html(json_data)
+    table_html = json2html(json_data, spanData)
     
     # 전체 HTML 조합
     # html_content = title_html + table_html

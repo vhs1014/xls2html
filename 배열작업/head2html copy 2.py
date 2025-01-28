@@ -1,5 +1,3 @@
-## 이전버전을 위해 페이지 유지.. (DF  api 사용)
-
 import pandas as pd
 import numpy as np
 import re
@@ -39,11 +37,11 @@ def head2json(df: pd.DataFrame) -> Dict:
         # 빈 값이 아닌 셀 찾기
         non_empty_cells = [x for x in row_data if str(x).strip()]
         
-        # # 한 줄에 한 칸만 값이 있는 경우
-        # if len(non_empty_cells) == 1 and not product_name_found:
-        #     result['상품명'] = non_empty_cells[0]
-        #     product_name_found = True
-        #     continue  # 이 행은 테이블 데이터에 포함하지 않음
+        # 한 줄에 한 칸만 값이 있는 경우
+        if len(non_empty_cells) == 1 and not product_name_found:
+            result['상품명'] = non_empty_cells[0]
+            product_name_found = True
+            continue  # 이 행은 테이블 데이터에 포함하지 않음
     
     # 각 행을 순번을 키로 하여 처리
     row_num = 1  # 새로운 행 번호 카운터
@@ -52,9 +50,9 @@ def head2json(df: pd.DataFrame) -> Dict:
         row_data = [format_cell(x) if pd.notna(x) else '' for x in row]
         non_empty_cells = [x for x in row_data if str(x).strip()]
         
-        # # 상품명 행은 건너뛰기
-        # if len(non_empty_cells) == 1 and non_empty_cells[0] == result.get('상품명'):
-        #     continue
+        # 상품명 행은 건너뛰기
+        if len(non_empty_cells) == 1 and non_empty_cells[0] == result.get('상품명'):
+            continue
             
         # 나머지 행들은 처리
         result[str(row_num)] = '||'.join(str(x).replace('\n', '<br>') for x in row_data)
@@ -73,8 +71,7 @@ def json2html(data: Dict) -> str:
     
     # 각 행 처리
     for key in sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else 0):
-        # if key != '상품명' and key != '출발월':  # 상품명은 처리하지 않음
-        if  key != '출발월':  # 상품명은 처리하지 않음
+        if key != '상품명' and key != '출발월':  # 상품명은 처리하지 않음
             cells = data[key].split('||')
             
             # 첫 번째 셀이 비어있는지 확인하여 클래스 추가
@@ -202,17 +199,17 @@ def create_html(df: pd.DataFrame) -> Tuple[Dict, str]:
     json_data = head2json(df)
     
     # 상품명 섹션 HTML 생성
-    # title_html = ''
-    # if '상품명' in json_data:
-    #     title_html = f'''
-    #     <div class="title-section">
-    #         <h1>{json_data['상품명']}</h1>
-    #     </div>
-    #     '''
+    title_html = ''
+    if '상품명' in json_data:
+        title_html = f'''
+        <div class="title-section">
+            <h1>{json_data['상품명']}</h1>
+        </div>
+        '''
     
     # JSON을 HTML로 변환 (테이블 부분)
     table_html = json2html(json_data)
     
     # 전체 HTML 조합
-    # html_content = title_html + table_html
-    return json_data, table_html
+    html_content = title_html + table_html
+    

@@ -1,5 +1,3 @@
-## 이전버전을 위해 페이지 유지.. (DF  api 사용)
-
 import pandas as pd
 import numpy as np
 import re

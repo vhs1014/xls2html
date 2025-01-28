@@ -1,19 +1,11 @@
-from s3_uploader import S3FileUploader
 from fastapi import FastAPI, HTTPException, UploadFile, File, Body
 from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-
-import pandas as pd
-from bs4 import BeautifulSoup
-
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-
-import datetime
-import unicodedata
-
+import pandas as pd
 from io import BytesIO
 import httpx 
 from collections import Counter
@@ -28,15 +20,22 @@ import re
 import tempfile
 import os
 import subprocess
-from typing import List, Dict
 
+from s3_uploader import S3FileUploader
 
 from head2html import create_html 
 from head2html_cellMerge import create_html_merge                                 # 이후 삭제 예정 (셀병합을 위한 임시)
 from extract_words import extract_sorted_unique_words
+
+import datetime
+import unicodedata
+
+from typing import List, Dict
+
 import itn2html
 from itn2html import ItineraryHtmlGenerator
-
+import html2html 
+from bs4 import BeautifulSoup
 
 app = FastAPI()
 
@@ -93,7 +92,7 @@ async def  split_multiline_rows(df: pd.DataFrame) -> pd.DataFrame:
         # 각 컬럼의 내용을 확인하고 줄바꿈이 있는지 체크
         for col in df.columns:
             if isinstance(row[col], str):
-                lines = row[col].split('<br/>')
+                lines = row[col].split('\n')
                 if len(lines) > 1:
                     has_multiline = True
                     multiline_cols.add(col)  # 줄바꿈이 있는 컬럼 기록
@@ -131,11 +130,11 @@ async def  split_multiline_rows(df: pd.DataFrame) -> pd.DataFrame:
 async def itn_search(df: pd.DataFrame) -> pd.DataFrame:
     # 컬럼 매핑 정의
     column_aliases = {
-        'date': ['일자', '날짜', '순번', '일시', 'DATE', 'Day', 'No', '월/일', '일차' ],
-        'place': ['지역', '장소', 'place', 'CITY', '도시', '여행지', '행선지', '방문도시', '방문장소'],
-        'transport': ['교통편', '이동수단', '교통', 'TRANS', 'Transport', '구분'],
+        'date': ['일자', '날짜', '순번', '일시', 'Date', 'Day', 'No', '월/일', '일차' ],
+        'place': ['지역', '장소', 'place', 'city', '도시', '여행지', '행선지', '방문도시', '방문장소'],
+        'transport': ['교통편', '이동수단', '교통', 'Trans', 'Transport', '구분'],
         'time': ['시간', 'time'],
-        'itinerary': ['주요일정', '일정', '관광지', 'itinerary', '여정', '세부내용', '세부일정', '주요내용', '주요관광지', 'SCHEDULE', '행사일정'],
+        'itinerary': ['주요일정', '일정', '관광지', 'itinerary', '여정', '세부내용', '세부일정', '주요내용', '주요관광지', 'schedule'],
         'meal': ['식사', 'meal', 'meals']
     }
     
@@ -143,19 +142,14 @@ async def itn_search(df: pd.DataFrame) -> pd.DataFrame:
     idy = -1
     for idx, row in df.iterrows():
         # 각 셀의 값에서 모든 빈칸을 지워줍니다.
-        # cleaned_row = [str(cell).replace(' ', '').replace('\xa0', '').replace('\n', '').lower() for cell in row]
-        cleaned_row = [str(cell).strip() if pd.notna(cell) else '' for cell in row]
+        cleaned_row = [str(cell).replace(' ', '').replace('\xa0', '').replace('\n', '').lower() for cell in row]
         # 각 셀이 어떤 카테고리에 속하는지 확인
         cells_with_matches = 0  # 매칭된 셀의 수를 카운트
         
         for cell in cleaned_row:
             has_match = False  # 현재 셀이 매칭되었는지 여부
-            # cell이 비어있거나 None이면 건너뛰기
-            if not cell:
-                continue
-                
             for category, aliases in column_aliases.items():
-                if any(alias.lower() in cell.lower().replace(' ', '').replace('\xa0', '').replace('\n', '').strip() for alias in aliases):
+                if any(alias.lower() in cell for alias in aliases):
                     has_match = True
                     break
             if has_match:
@@ -164,7 +158,6 @@ async def itn_search(df: pd.DataFrame) -> pd.DataFrame:
         if cells_with_matches >= 3:
             idy = idx
             break
-    
     if idy == -1: idy = len(df)            
     head_df = df.iloc[:idy]  # 헤더 부분
     itn_df = df.iloc[idy:]   # 일정 부분
@@ -323,7 +316,6 @@ async def convert_df_to_json(df: pd.DataFrame, column_aliases) -> str:
         text = clean_text(text).replace(' ', '')
         # 날짜 패턴 정의
         day_patterns = [
-            r'(?i)d\.d',  # '숫자+일'이 포함된 모든 경우
             r'\d+일',  # '숫자+일'이 포함된 모든 경우
             r'(?i)day\d+',  # 'Day숫자', 'day숫자', 'DAY숫자' 등 대소문자 구분 없이
             r'(?i)\d+day',  # '숫자Day', '숫자day', '숫자DAY' 등 대소문자 구분 없이
@@ -769,49 +761,25 @@ async def table_to_html(data: str = Body(...)):
     temp_df = pd.DataFrame(df_data)
     
     # 헤더 위치 찾기
-    # head_df, itn_df, column_aliases = await itn_search(temp_df)
-    # header_end_idx = len(head_df)
+    head_df, itn_df, column_aliases = await itn_search(temp_df)
+    header_end_idx = len(head_df)
     
     # 다시 처음부터 DataFrame 만들기 (헤더는 HTML, 나머지는 텍스트)
-    # df_data = []
-    # for idx, row in enumerate(table.find_all('tr')):
-    #     row_data = []
-    #     for cell in row.find_all(['td', 'th']):
-    #         if idx < header_end_idx:
-    #             # 헤더 부분은 HTML 추출
-    #             cell_content = ''.join(str(content) for content in cell.contents)
-    #         else:
-    #             # 일정 부분은 텍스트만 추출
-    #             cell_content = cell.get_text(strip=True)
-    #         row_data.append(cell_content)
-    #     df_data.append(row_data)
-    # df = pd.DataFrame(df_data)
-    def clean_word_tags(text):
-        """Word 문서 태그 제거"""
-        if not isinstance(text, str):
-            return text
-        # Word 조건부 서식 태그 제거
-        text = re.sub(r'\[if[^\]]*\]|\[endif\]', '', text)
-        # Office XML 태그 제거
-        text = re.sub(r'<o:[^>]*>|</o:[^>]*>', '', text)
-        # 일반적인 빈 XML 태그 제거
-        text = re.sub(r'<[^>]*></[^>]*>', '', text)
-        # 연속된 공백을 하나로
-        text = ' '.join(text.split())
-        return text.strip()
-
     df_data = []
     for idx, row in enumerate(table.find_all('tr')):
         row_data = []
         for cell in row.find_all(['td', 'th']):
-            cell_content = ''.join(str(content) for content in cell.contents)
-            row_data.append(clean_word_tags(cell_content))  # Word 조건부 서식 태그 제거cell_content)
+            if idx < header_end_idx:
+                # 헤더 부분은 HTML 추출
+                cell_content = ''.join(str(content) for content in cell.contents)
+            else:
+                # 일정 부분은 텍스트만 추출
+                cell_content = cell.get_text(strip=True)
+            row_data.append(cell_content)
         df_data.append(row_data)
     df = pd.DataFrame(df_data)
     
     head_df, itn_df, column_aliases = await itn_search(df)
-    # itn_df = await split_multiline_rows(itn_df)
-
     headjson, head_html = create_html_merge(head_df, spanData=span_data)
     # head_df 에서는 출발월 을        1월||2월||3월
     # itn_df에서는 출도착 시간을     12:00||13:00 
@@ -848,6 +816,55 @@ async def table_to_html(data: str = Body(...)):
         # 'file_url': result['file_url'],  # result가 정의된 경우에만 사용
     })
     
+        
+# @app.post("/itinerary/df_cellMerge/")
+# async def convert_df_to_html(data: TableData):
+#     df = pd.DataFrame(data.tableData)
+#     head_df, itn_df, column_aliases = await itn_search(df)
+#     # head_df 에서는 출발월 을        1월||2월||3월
+#     # itn_df 에서는 출도착 시간을     12:00||13:00 
+
+#     itn_df = await split_multiline_rows(itn_df)
+#     subData = {}
+    
+#     # 헤더 데이터 처리
+#     headjson, head_html = create_html_merge(head_df)
+    
+#     # 일정 데이터 처리
+#     subData['itinerary'], locations, places , deptime, arrtime = await convert_df_to_json(itn_df, column_aliases)
+#     # subData['file_url'] = result['file_url']
+#     # ItineraryHtmlGenerator를 사용하여 HTML 생성
+#     generator = ItineraryHtmlGenerator(subData)
+#     itinerary_html = generator.generate_html()  # 일정 HTML 생성 (상품명 제외)
+    
+#     # 최종 HTML 생성
+#     with open('./templates/template.html', 'r', encoding='utf-8') as f:
+#         template = f.read()
+#     final_html = template.replace('{{content}}', head_html + itinerary_html)
+    
+#     # 추가 정보 업데이트
+#     subData['locations'] = ','.join(locations).replace(' ', '')
+#     subData['places'] = extract_sorted_unique_words(','.join(places))
+#     subData['출발시간'] = deptime
+#     subData['도착시간'] = arrtime
+#     subData.update(headjson)
+    
+#     return JSONResponse(content={
+#         'status': 'success',
+#         'html': final_html,
+#         'subData': subData,
+#         # 'file_url': result['file_url'],  # result가 정의된 경우에만 사용
+#     })
+    
+                
+        
+# @app.post("/itinerary/df_cellMerge")
+# async def table_to_html(data: str = Body(...)):  # Body로 변경
+#     # html2html = HTML2HTML()
+#     return html2html.process_html_table(data)
+
+
+
 
 @app.post("/itinerary/send-email")
 async def send_email(email_request: EmailRequest):

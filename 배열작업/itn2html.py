@@ -114,8 +114,8 @@ class ItineraryHtmlGenerator:
                     detail_text = f"{detail} ({time})"
                 details_html.append(f'<div class="detail-row"><span class="detail-text">{detail_text}</span></div>')
             
-                details_html = ''.join(details_html)
-                schedule_html.append(f'<tr><td class="detail">{details_html}</td></tr>')
+            details_html = ''.join(details_html)
+            schedule_html.append(f'<tr><td class="detail">{details_html}</td></tr>')
         
         return '\n'.join(schedule_html)
 

@@ -848,6 +848,55 @@ async def table_to_html(data: str = Body(...)):
         # 'file_url': result['file_url'],  # result가 정의된 경우에만 사용
     })
     
+        
+# @app.post("/itinerary/df_cellMerge/")
+# async def convert_df_to_html(data: TableData):
+#     df = pd.DataFrame(data.tableData)
+#     head_df, itn_df, column_aliases = await itn_search(df)
+#     # head_df 에서는 출발월 을        1월||2월||3월
+#     # itn_df 에서는 출도착 시간을     12:00||13:00 
+
+#     itn_df = await split_multiline_rows(itn_df)
+#     subData = {}
+    
+#     # 헤더 데이터 처리
+#     headjson, head_html = create_html_merge(head_df)
+    
+#     # 일정 데이터 처리
+#     subData['itinerary'], locations, places , deptime, arrtime = await convert_df_to_json(itn_df, column_aliases)
+#     # subData['file_url'] = result['file_url']
+#     # ItineraryHtmlGenerator를 사용하여 HTML 생성
+#     generator = ItineraryHtmlGenerator(subData)
+#     itinerary_html = generator.generate_html()  # 일정 HTML 생성 (상품명 제외)
+    
+#     # 최종 HTML 생성
+#     with open('./templates/template.html', 'r', encoding='utf-8') as f:
+#         template = f.read()
+#     final_html = template.replace('{{content}}', head_html + itinerary_html)
+    
+#     # 추가 정보 업데이트
+#     subData['locations'] = ','.join(locations).replace(' ', '')
+#     subData['places'] = extract_sorted_unique_words(','.join(places))
+#     subData['출발시간'] = deptime
+#     subData['도착시간'] = arrtime
+#     subData.update(headjson)
+    
+#     return JSONResponse(content={
+#         'status': 'success',
+#         'html': final_html,
+#         'subData': subData,
+#         # 'file_url': result['file_url'],  # result가 정의된 경우에만 사용
+#     })
+    
+                
+        
+# @app.post("/itinerary/df_cellMerge")
+# async def table_to_html(data: str = Body(...)):  # Body로 변경
+#     # html2html = HTML2HTML()
+#     return html2html.process_html_table(data)
+
+
+
 
 @app.post("/itinerary/send-email")
 async def send_email(email_request: EmailRequest):

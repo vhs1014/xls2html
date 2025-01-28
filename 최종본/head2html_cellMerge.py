@@ -1,5 +1,3 @@
-## 이전버전을 위해 페이지 유지.. (DF  api 사용)
-
 import pandas as pd
 import numpy as np
 import re
@@ -62,58 +60,90 @@ def head2json(df: pd.DataFrame) -> Dict:
     
     return result
 
-def json2html(data: Dict) -> str:
+def json2html(data: Dict, spanData: list) -> str:
     """JSON 데이터를 HTML로 변환"""
-    html_parts = []
+    from bs4 import BeautifulSoup
     
-    # 테이블 컨테이너 시작 (상품명 섹션 제거)
-    html_parts.append('<div class="info-section">')
-    html_parts.append('<table class="info-table">')
-    html_parts.append('<tbody>')
+    # 기본 HTML 구조 생성
+    html = '<div class="info-section"><table class="info-table"><tbody></tbody></table></div>'
+    soup = BeautifulSoup(html, 'html.parser')
     
-    # 각 행 처리
+    tbody = soup.find('tbody')
+    
+    # 각 행 처리하여 HTML 요소 생성
+    row_index = 0
     for key in sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else 0):
-        # if key != '상품명' and key != '출발월':  # 상품명은 처리하지 않음
-        if  key != '출발월':  # 상품명은 처리하지 않음
+        # if key != '상품명' and key != '출발월':
+        if key != '출발월':
             cells = data[key].split('||')
+            tr = soup.new_tag('tr')
+            tbody.append(tr)
+            # 모든 셀 생성
+            for i, cell_content in enumerate(cells):
+                td = soup.new_tag('td')
+                td['class'] = 'first-cell' if i == 0 else 'data-cell'
+                td.append(BeautifulSoup(cell_content, 'html.parser'))
+                tr.append(td)
             
-            # 첫 번째 셀이 비어있는지 확인하여 클래스 추가
-            is_first_empty = not cells[0].strip()
-            tr_class = ' class="empty-first"' if is_first_empty else ''
-            html_parts.append(f'<tr{tr_class}>')
+            row_index += 1
+    
+    # spanData를 기반으로 셀 병합 처리
+    rows = tbody.find_all('tr')
+    for row_idx, row_spans in enumerate(spanData):
+        if row_idx >= len(rows):
+            continue
+        dcount = 0     
+        current_row = rows[row_idx]
+        
+        for col_idx, (colspan, rowspan) in enumerate(row_spans):
+            # 현재 행의 모든 셀을 다시 가져옴
+            current_cells = current_row.find_all('td')
+            if col_idx >= len(current_cells):
+                continue
+                
+            current_cell = current_cells[col_idx]
             
-            i = 0
-            while i < len(cells):
-                # 현재 셀이 비어있고 첫 번째 셀이 아니면 건너뛰기
-                if i > 0 and not cells[i].strip():
-                    i += 1
-                    continue
+            # colspan 처리
+            if colspan > 1:
+                current_cell['colspan'] = colspan
+                # 현재 행에서 병합될 셀들 삭제
+                cells_to_remove = []
+                for i in range(1, colspan):
+                    next_cell_idx = col_idx + i
+                    if next_cell_idx < len(current_cells):
+                        cells_to_remove.append(current_cells[next_cell_idx])
                 
-                # 현재 셀 다음부터 연속된 빈 셀 개수 세기
-                empty_count = 0
-                next_pos = i + 1
-                while next_pos < len(cells) and not cells[next_pos].strip():
-                    empty_count += 1
-                    next_pos += 1
-
-                # 첫 번째 셀은 특별한 스타일 적용
-                if i == 0:
-                    html_parts.append(f'<td class="first-cell"' + (f' colspan="{empty_count + 1}"' if empty_count > 0 else '') + f'>{cells[i]}</td>')
-                else:  # 값이 있는 셀
-                    html_parts.append(f'<td class="data-cell"' + (f' colspan="{empty_count + 1}"' if empty_count > 0 else '') + f'>{cells[i]}</td>')
-                
-                # 다음 위치로 이동 (빈 셀은 건너뛰기)
-                i = next_pos if empty_count > 0 else i + 1
+                # 수집된 셀들 삭제
+                for cell in cells_to_remove:
+                    if col_idx > 0 : dcount += 1
+                    cell.decompose()
+            
+            # rowspan 처리
+            if rowspan > 1:
+                current_cell['rowspan'] = rowspan
+                # 다음 행들에서 병합될 셀들 삭제
+                for r in range(row_idx + 1, min(row_idx + rowspan, len(rows))):
+                    next_row = rows[r]
+                    next_row_cells = next_row.find_all('td')
                     
-            html_parts.append('</tr>')
-
-    html_parts.append('</tbody>')
-    html_parts.append('</table>')
-    html_parts.append('</div>')
+                    cells_to_remove = []
+                    # colspan이 있는 경우 그만큼의 셀을 더 수집
+                    span_width = colspan if colspan > 1 else 1
+                    for c in range(col_idx, min(col_idx + span_width, len(next_row_cells))):
+                        cells_to_remove.append(next_row_cells[c - dcount])
+                    
+                    # 수집된 셀들 삭제
+                    for cell in cells_to_remove:
+                        cell.decompose()
+                    
+                    # 행의 모든 셀이 삭제되었는지 확인
+                    remaining_cells = next_row.find_all('td')
+                    if not remaining_cells:  # 남은 셀이 없으면
+                        next_row.decompose()  # tr 태그 삭제
     
     # 스타일 추가
-    html_parts.insert(0, '''
-    <style>
+    style = soup.new_tag('style')
+    style.string = '''
         /* 기본 테이블 스타일 */
         .info-table {
             width: 100%;
@@ -191,17 +221,17 @@ def json2html(data: Dict) -> str:
                 box-sizing: border-box;
             }
         }
-    </style>
-    ''')
+    '''
+    soup.insert(0, style)
     
-    return '\n'.join(html_parts)
+    return str(soup)
 
-def create_html(df: pd.DataFrame) -> Tuple[Dict, str]:
+def create_html_merge(df: pd.DataFrame, spanData: dict = None) -> Tuple[Dict, str]:
     """엑셀 데이터를 HTML로 변환하는 메인 함수"""
     # 엑셀 데이터를 JSON으로 변환
     json_data = head2json(df)
     
-    # 상품명 섹션 HTML 생성
+    # # 상품명 섹션 HTML 생성
     # title_html = ''
     # if '상품명' in json_data:
     #     title_html = f'''
@@ -211,7 +241,7 @@ def create_html(df: pd.DataFrame) -> Tuple[Dict, str]:
     #     '''
     
     # JSON을 HTML로 변환 (테이블 부분)
-    table_html = json2html(json_data)
+    table_html = json2html(json_data, spanData)
     
     # 전체 HTML 조합
     # html_content = title_html + table_html
